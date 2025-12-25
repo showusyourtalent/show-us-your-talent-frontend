@@ -1,0 +1,235 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-black font-sans;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-custom-gold text-white font-semibold py-2 px-6 rounded-lg 
+           hover:bg-amber-600 transition-all duration-300 
+           disabled:opacity-50 disabled:cursor-not-allowed
+           shadow-lg hover:shadow-xl;
+  }
+
+  .btn-secondary {
+    @apply bg-custom-dark-red text-white font-semibold py-2 px-6 rounded-lg 
+           hover:bg-red-800 transition-all duration-300
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-outline {
+    @apply border-2 border-custom-gold text-custom-gold font-semibold py-2 px-6 rounded-lg 
+           hover:bg-custom-gold hover:text-white transition-all duration-300;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-lg border border-gray-100 
+           hover:shadow-xl transition-shadow duration-300;
+  }
+
+  .input-primary {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-lg 
+           focus:outline-none focus:ring-2 focus:ring-custom-gold 
+           focus:border-transparent transition-all;
+  }
+
+  .nav-link {
+    @apply text-gray-700 hover:text-custom-gold font-medium 
+           transition-colors duration-200 px-3 py-2 rounded-md;
+  }
+
+  .nav-link-active {
+    @apply text-custom-gold bg-amber-50 font-semibold;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-custom-gold to-amber-500 bg-clip-text text-transparent;
+  }
+  
+}
+
+/* Animations supplémentaires */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+/* Classes d'animation */
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+
+/* Styles pour les champs de formulaire améliorés */
+.form-field-focus {
+  transition: all 0.3s ease;
+}
+
+.form-field-focus:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(230, 184, 0, 0.2);
+}
+
+/* Effet de brillance */
+.shimmer-effect {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Animations pour modales */
+@keyframes slideIn {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Styles pour les cartes hover */
+.hover-card {
+  transition: all 0.3s ease;
+}
+
+.hover-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Styles pour les boutons */
+.btn-gradient-gold {
+  background: linear-gradient(135deg, #e6b800 0%, #ffd700 100%);
+  color: black;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.btn-gradient-gold:hover {
+  background: linear-gradient(135deg, #d4a600 0%, #e6c200 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(230, 184, 0, 0.3);
+}
+
+.btn-gradient-red {
+  background: linear-gradient(135deg, #8B0000 0%, #c53030 100%);
+  color: white;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.btn-gradient-red:hover {
+  background: linear-gradient(135deg, #7a0000 0%, #b42828 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(139, 0, 0, 0.3);
+}
+
+/* Animation pour le point en ligne */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.online-dot {
+  animation: pulse 2s infinite;
+}
+
+/* Scrollbar personnalisée pour le chat */
+.chat-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Animation d'entrée des messages */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message {
+  animation: slideIn 0.3s ease-out;
+}
