@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 const axiosInstance = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'https://show-us-your-talent-backend-1.onrender.com/api', // URL par défaut
+  baseURL: 'https://show-us-your-talent-backend-1.onrender.com/api',
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
