@@ -2,18 +2,18 @@ import axios from 'axios';
 
 // Définir l'URL de base
 const getBaseURL = () => {
-  const hostname = window.location.hostname;
-  const port = window.location.port;
-  
-  console.log('Current hostname:', hostname, 'Port:', port);
-  
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    // Si vous utilisez React sur un port différent
-    return 'https://show-us-your-talent-backend-1.onrender.com/api';
+  // 1. Variable d'environnement (prioritaire)
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
   }
   
-  // En production
-  return `${window.location.protocol}//${hostname}${port ? ':' + port : ''}/api`;
+  // 2. Configuration globale (si définie)
+  if (window.APP_CONFIG && window.APP_CONFIG.API_URL) {
+    return window.APP_CONFIG.API_URL;
+  }
+  
+  // 3. Par défaut : TOUJOURS le backend Render
+  return 'https://show-us-your-talent-backend-1.onrender.com/api';
 };
 
 const API_BASE_URL = getBaseURL();
