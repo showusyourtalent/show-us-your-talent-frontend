@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "start": "node server.js",
+    "build": "react-scripts build",
     "preview": "vite preview",
     "backend": "cd ../show-us-your-talent-backend && php artisan serve",
     "dev:all": "concurrently \"npm run dev\" \"npm run backend\""
@@ -21,6 +22,7 @@
     "@tanstack/react-query-devtools": "^5.91.1",
     "axios": "^1.13.2",
     "date-fns": "^4.1.0",
+    "express": "^5.2.1",
     "framer-motion": "^12.23.26",
     "react": "^19.2.0",
     "react-countdown": "^2.3.2",
