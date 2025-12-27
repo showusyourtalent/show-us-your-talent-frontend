@@ -22,7 +22,7 @@ import {
   CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from '../../../api/axios';
+import axios from '../../api/axios';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import axiosInstance from '/api/axios';
+import axiosInstance from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
 import ChatModal from '../../components/Chat/ChatModal';
 import ProtectedRoute from '../../components/ProtectedRoute';

@@ -65,7 +65,7 @@ import {
   MilitaryTech as MilitaryTechIcon,
   WorkspacePremium as WorkspacePremiumIcon,
 } from '@mui/icons-material';
-import axios from '../../api/axios';
+import axios from '../api/axios';
 
 // Importer PaymentModal depuis le fichier corrigé
 import PaymentModal from './PaymentModal';

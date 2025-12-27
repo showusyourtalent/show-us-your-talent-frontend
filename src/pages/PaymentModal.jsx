@@ -51,7 +51,7 @@ import {
   Phone as PhoneIcon,
   PersonAdd as PersonAddIcon
 } from '@mui/icons-material';
-import axios from '../../api/axios';
+import axios from '../api/axios';
 import { PALETTE } from './CandidatsPage';
 
 const steps = ['Informations', 'Paiement', 'Confirmation'];

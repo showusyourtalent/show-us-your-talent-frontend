@@ -56,7 +56,7 @@ import {
   Groups as GroupsIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
-import axios from '../../api/axios';
+import axios from '../api/axios';
 
 // Définir PALETTE localement
 const PALETTE = {
