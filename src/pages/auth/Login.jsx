@@ -607,7 +607,7 @@ const Login = () => {
                         fontSize: '12px',
                       }}
                     >
-                      Besoin d'aide ? Contactez-nous à support@syt.com
+                      Besoin d'aide ? Contactez-nous à showusyourtalent2@gmail.com
                     </Typography>
                   </Fade>
                 </Box>
