@@ -10,7 +10,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  background: url('/pattern.png');
+  background-image: url('../assets/pattern.png');
   background-size: 300px;
   background-blend-mode: overlay;
   background-color: rgba(255, 255, 255, 0.95);
