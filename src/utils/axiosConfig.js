@@ -9,7 +9,7 @@ const getBaseURL = () => {
   
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     // Si vous utilisez React sur un port différent
-    return 'http://localhost:8000/api';
+    return 'https://show-us-your-talent-backend-1.onrender.com/api';
   }
   
   // En production

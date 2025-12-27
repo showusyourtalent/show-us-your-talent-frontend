@@ -8,7 +8,7 @@ const getBaseURL = () => {
   }
   
   // Par défaut, utiliser l'URL de développement
-  return 'http://localhost:8000/api';
+  return 'https://show-us-your-talent-backend-1.onrender.com/api';
 };
 
 const instance = axios.create({

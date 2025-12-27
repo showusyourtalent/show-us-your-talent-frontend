@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'https://show-us-your-talent-backend-1.onrender.com/api';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
