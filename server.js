@@ -4,20 +4,20 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
-// pour ES modules
+// Configuration pour ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// servir le build React
+// Middleware pour les fichiers statiques
 app.use(express.static(path.join(__dirname, 'build')));
 
-// fallback React Router
+// Gestion des routes React (pour React Router)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-// ⚠️ OBLIGATOIRE SUR RENDER
+// Port configuré pour Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {  // Important: '0.0.0.0' pour Render
+  console.log(`Server is running on port ${PORT}`);
 });

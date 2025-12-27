@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: show-us-your-talent-frontend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    staticPublishPath: ./build

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "start": "node server.js",
-    "build": "react-scripts build",
+    "build": "vite build",
     "preview": "vite preview",
     "backend": "cd ../show-us-your-talent-backend && php artisan serve",
     "dev:all": "concurrently \"npm run dev\" \"npm run backend\""
@@ -22,7 +22,7 @@
     "@tanstack/react-query-devtools": "^5.91.1",
     "axios": "^1.13.2",
     "date-fns": "^4.1.0",
-    "express": "^5.2.1",
+    "express": "^4.21.2",
     "framer-motion": "^12.23.26",
     "react": "^19.2.0",
     "react-countdown": "^2.3.2",
@@ -33,7 +33,6 @@
     "react-intersection-observer": "^10.0.0",
     "react-player": "^3.4.0",
     "react-router-dom": "^7.10.1",
-    "react-scripts": "^5.0.1",
     "recharts": "^3.6.0",
     "socket.io-client": "^4.8.3",
     "yup": "^1.7.1"
@@ -52,5 +51,17 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "vite": "^7.2.4"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   }
 }
