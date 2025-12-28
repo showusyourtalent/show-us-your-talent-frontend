@@ -41,6 +41,7 @@ import {
   Dialog,
   DialogContent,
   Divider,
+  Grow,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -65,6 +66,8 @@ import {
   LocationOn as LocationIcon,
   Language as LanguageIcon,
   CheckCircle as CheckIcon,
+  Description as DescriptionIcon,
+  Celebration as CelebrationIcon,
 } from '@mui/icons-material';
 
 // ==================== SCHEMA DE VALIDATION ====================
@@ -90,16 +93,16 @@ const schema = yup.object({
       const date = new Date(value);
       return !isNaN(date.getTime());
     })
-    .test('age', 'Vous devez avoir au moins 16 ans', (value) => {
+    .test('age', 'Vous devez avoir au moins 10 ans', (value) => {
       if (!value) return false;
       const birthDate = new Date(value);
       const today = new Date();
       const age = today.getFullYear() - birthDate.getFullYear();
       const monthDiff = today.getMonth() - birthDate.getMonth();
       if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        return age - 1 >= 16;
+        return age - 1 >= 10;
       }
-      return age >= 16;
+      return age >= 10;
     }),
   
   sexe: yup.string()
@@ -143,14 +146,10 @@ const schema = yup.object({
   
   video_url: yup.string()
     .url('URL invalide')
-    .test('video-required', 'Vidéo de présentation requise', function(value) {
-      const { videoFile } = this.parent;
-      return !!(value || videoFile);
-    }),
+    .required('Lien de la vidéo de présentation requis'),
   
   description_talent: yup.string()
-    .required('Description requise')
-    .min(100, 'Minimum 100 caractères')
+    .nullable()
     .max(2000, 'Maximum 2000 caractères'),
 });
 
@@ -191,7 +190,6 @@ const Postuler = () => {
       category_id: '',
       video_url: '',
       description_talent: '',
-      videoFile: null,
     },
   });
 
@@ -211,6 +209,8 @@ const Postuler = () => {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(true);
+  const [animateIn, setAnimateIn] = useState(false);
   
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -268,13 +268,11 @@ const Postuler = () => {
     queryFn: async () => {
       if (!watchedEditionId) return [];
       try {
-        // Essayez d'abord la route candidat/categories
         const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`);
         console.log('Catégories API response:', response.data);
         return response.data?.data || response.data || [];
       } catch (error) {
         console.error('Erreur chargement catégories:', error);
-        // Fallback: essayer l'autre route
         try {
           const fallbackResponse = await axiosInstance.get(`/categories/edition/${watchedEditionId}`);
           return fallbackResponse.data?.data || fallbackResponse.data || [];
@@ -303,54 +301,72 @@ const Postuler = () => {
     })) : [];
   }, [categoriesData, categoriesLoading]);
 
-  // ==================== MUTATION OPTIMISÉE ====================
+  // ==================== MUTATION CORRIGÉE ====================
   const mutation = useMutation({
     mutationFn: async (formData) => {
       setIsSubmitting(true);
-      const response = await axiosInstance.post('/candidat/postuler', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 60000,
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            setUploadProgress(percentCompleted);
-          }
-        },
-      });
-      return response.data;
+      setUploadProgress(0);
+      
+      try {
+        console.log("Envoi de FormData au backend:");
+        for (let [key, value] of formData.entries()) {
+          console.log(key, ":", value instanceof File ? `Fichier: ${value.name} (${value.type}, ${value.size} octets)` : value);
+        }
+
+        const response = await axiosInstance.post('/candidat/postuler', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 120000,
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percentCompleted = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total
+              );
+              setUploadProgress(percentCompleted);
+            }
+          },
+        });
+        return response.data;
+      } catch (error) {
+        console.error("Erreur complète:", error);
+        if (error.response?.data) {
+          console.error("Données d'erreur:", error.response.data);
+        }
+        throw error;
+      }
     },
     onSuccess: (data) => {
       toast.success('🎉 Candidature soumise avec succès !');
-      navigate('/candidat/mes-candidatures', {
-        state: { 
-          success: true, 
-          candidateId: data.data?.id,
-          message: 'Votre candidature a été soumise avec succès.' 
-        }
-      });
+      setTimeout(() => {
+        navigate('/candidat/mes-candidatures', {
+          state: { 
+            success: true, 
+            candidateId: data.data?.id,
+            message: 'Votre candidature a été soumise avec succès.' 
+          }
+        });
+      }, 1000);
     },
     onError: (error) => {
       console.error('Mutation error:', error);
       const errorData = error.response?.data;
-      const errorMessage = errorData?.message || 
-                          errorData?.error || 
-                          error.message || 
-                          'Erreur lors de la soumission';
       
       if (error.response?.status === 422 && errorData?.errors) {
         setErrors(errorData.errors);
         toast.error('Veuillez corriger les erreurs dans le formulaire');
         window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else if (error.response?.status === 500) {
+        toast.error('Erreur serveur. Veuillez réessayer plus tard.');
+        console.error("Erreur 500 backend:", errorData?.message || errorData?.error);
       } else if (error.response?.status === 413) {
-        toast.error('Fichiers trop volumineux. Veuillez réduire leur taille.');
+        toast.error('Fichiers trop volumineux. La photo doit faire moins de 5MB.');
       } else if (error.code === 'ECONNABORTED') {
         toast.error('Délai d\'attente dépassé. Vérifiez votre connexion.');
+      } else if (error.message) {
+        toast.error(error.message);
       } else {
-        toast.error(errorMessage);
+        toast.error('Erreur inconnue. Veuillez réessayer.');
       }
     },
     onSettled: () => {
@@ -361,10 +377,26 @@ const Postuler = () => {
 
   // ==================== FONCTIONS ====================
   const steps = useMemo(() => [
-    { label: 'Informations personnelles', icon: <PersonIcon />, fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] },
-    { label: 'Informations académiques', icon: <SchoolIcon />, fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] },
-    { label: 'Choix de l\'édition', icon: <TrophyIcon />, fields: ['edition_id', 'category_id'] },
-    { label: 'Présentation du talent', icon: <VideoIcon />, fields: ['video_url', 'description_talent'] },
+    { 
+      label: 'Informations personnelles', 
+      icon: <PersonIcon />, 
+      fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] 
+    },
+    { 
+      label: 'Informations académiques', 
+      icon: <SchoolIcon />, 
+      fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] 
+    },
+    { 
+      label: 'Choix de l\'édition', 
+      icon: <TrophyIcon />, 
+      fields: ['edition_id', 'category_id'] 
+    },
+    { 
+      label: 'Présentation du talent', 
+      icon: <VideoIcon />, 
+      fields: ['video_url', 'description_talent'] 
+    },
   ], []);
 
   const getCurrentEdition = useCallback(() => {
@@ -381,8 +413,13 @@ const Postuler = () => {
   }, [activeStep, steps, formErrors]);
 
   // ==================== EFFECTS ====================
+  // Animation d'entrée
   useEffect(() => {
-    // Pré-remplir l'édition depuis l'URL
+    setAnimateIn(true);
+  }, []);
+
+  // Pré-remplir l'édition depuis l'URL
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const editionId = params.get('edition');
     if (editionId && editions.length > 0 && !watchedEditionId) {
@@ -414,6 +451,8 @@ const Postuler = () => {
       setActiveStep(prev => prev + 1);
       clearErrors();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      toast.error('Veuillez remplir correctement tous les champs avant de continuer');
     }
   }, [activeStep, steps, trigger, clearErrors]);
 
@@ -426,7 +465,8 @@ const Postuler = () => {
     if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
       return;
     }
-    navigate('/');
+    setDialogOpen(false);
+    setTimeout(() => navigate('/'), 300);
   }, [isDirty, navigate]);
 
   const handlePhotoUpload = useCallback((event) => {
@@ -451,28 +491,6 @@ const Postuler = () => {
     reader.readAsDataURL(file);
   }, []);
 
-  const handleVideoUpload = useCallback((event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validation
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('La vidéo ne doit pas dépasser 100MB');
-      return;
-    }
-    if (!['video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime'].includes(file.type)) {
-      toast.error('Format non supporté. Utilisez MP4, MOV, AVI ou WebM');
-      return;
-    }
-
-    setVideoFile(file);
-    setValue('videoFile', file, { shouldValidate: true });
-    
-    // Create preview URL
-    const videoURL = URL.createObjectURL(file);
-    setVideoPreview(videoURL);
-  }, [setValue]);
-
   const removePhoto = useCallback((e) => {
     e?.stopPropagation();
     setPhotoFile(null);
@@ -482,17 +500,6 @@ const Postuler = () => {
     }
   }, []);
 
-  const removeVideo = useCallback((e) => {
-    e?.stopPropagation();
-    setVideoFile(null);
-    setVideoPreview('');
-    setValue('video_url', '', { shouldValidate: false });
-    setValue('videoFile', null, { shouldValidate: true });
-    if (videoInputRef.current) {
-      videoInputRef.current.value = '';
-    }
-  }, [setValue]);
-
   const onSubmit = useCallback(async (data) => {
     // Validation finale
     const isValid = await trigger();
@@ -501,38 +508,40 @@ const Postuler = () => {
       return;
     }
 
+    // Vérification photo
+    if (!photoFile) {
+      toast.error('La photo de profil est requise');
+      return;
+    }
+
     setUploadProgress(0);
     setErrors({});
     
     const formData = new FormData();
     
-    // Ajouter tous les champs
+    // Ajouter tous les champs texte
     Object.keys(data).forEach(key => {
       if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
         formData.append(key, data[key]);
       }
     });
     
-    // Ajouter les fichiers
-    if (photoFile) {
-      formData.append('photo', photoFile);
-    }
-    if (videoFile) {
-      formData.append('video', videoFile);
-    } else if (data.video_url) {
-      // Si URL vidéo fournie
-      formData.append('video_url', data.video_url);
-    }
+    // Ajouter la photo
+    formData.append('photo', photoFile);
+
+    console.log("FormData prêt à être envoyé:");
+    console.log("Données:", data);
+    console.log("Photo:", photoFile?.name);
 
     mutation.mutate(formData);
-  }, [photoFile, videoFile, trigger, mutation]);
+  }, [photoFile, trigger, mutation]);
 
   // ==================== RENDER FUNCTIONS ====================
   const renderStepContent = () => {
     switch (activeStep) {
       case 0:
         return (
-          <Fade in timeout={300}>
+          <Fade in timeout={500}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -549,130 +558,247 @@ const Postuler = () => {
               <Grid container spacing={isMobile ? 2 : 3}>
                 {/* Photo Upload */}
                 <Grid item xs={12} md={4}>
-                  <Card sx={{ 
-                    height: '100%',
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: photoPreview ? '#10B981' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                      boxShadow: 2,
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Typography variant="subtitle2" sx={{ 
-                        mb: 2, 
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        color: 'text.primary'
-                      }}>
-                        Photo de profil *
-                      </Typography>
-                      
-                      <Box
-                        sx={{
-                          border: '2px dashed',
-                          borderColor: photoPreview ? '#10B981' : alpha(theme.palette.primary.main, 0.3),
-                          borderRadius: 2,
-                          p: isMobile ? 2 : 3,
-                          position: 'relative',
-                          cursor: 'pointer',
-                          minHeight: isMobile ? 160 : 200,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            borderColor: '#D4AF37',
-                            backgroundColor: alpha('#D4AF37', 0.02),
-                          }
-                        }}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handlePhotoUpload}
-                          ref={fileInputRef}
-                          style={{ display: 'none' }}
-                        />
-                        
-                        {photoPreview ? (
-                          <>
-                            <Avatar
-                              src={photoPreview}
-                              sx={{
-                                width: isMobile ? 100 : 120,
-                                height: isMobile ? 100 : 120,
-                                mb: 2,
-                                border: '3px solid #D4AF37',
-                                boxShadow: 1,
-                              }}
-                            />
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              onClick={removePhoto}
-                              startIcon={<DeleteIcon />}
-                              sx={{ 
-                                borderRadius: 1,
-                                textTransform: 'none',
-                                fontWeight: 500
-                              }}
-                            >
-                              Changer
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <CameraIcon sx={{ 
-                              fontSize: isMobile ? 40 : 48, 
-                              color: alpha(theme.palette.text.secondary, 0.5),
-                              mb: 2 
-                            }} />
-                            <Typography variant="body2" sx={{ 
-                              color: 'text.secondary',
-                              textAlign: 'center',
-                              mb: 1,
-                              fontWeight: 500
-                            }}>
-                              Cliquez pour uploader
-                            </Typography>
-                            <Typography variant="caption" sx={{ 
-                              color: 'text.secondary',
-                              textAlign: 'center',
-                              display: 'block'
-                            }}>
-                              JPG, PNG, WebP (max 5MB)
-                            </Typography>
-                          </>
-                        )}
-                      </Box>
-                      
-                      {errors.photo && (
-                        <Typography color="error" variant="caption" sx={{ mt: 1, display: 'block' }}>
-                          <ErrorIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
-                          {errors.photo[0]}
+                  <Grow in timeout={600}>
+                    <Card sx={{ 
+                      height: '100%',
+                      borderRadius: 2,
+                      border: '2px solid',
+                      borderColor: photoPreview ? '#10B981' : 'divider',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        borderColor: '#D4AF37',
+                        boxShadow: 2,
+                        transform: 'translateY(-2px)',
+                      }
+                    }}>
+                      <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                        <Typography variant="subtitle2" sx={{ 
+                          mb: 2, 
+                          fontWeight: 600,
+                          textAlign: 'center',
+                          color: 'text.primary'
+                        }}>
+                          Photo de profil *
                         </Typography>
-                      )}
-                    </CardContent>
-                  </Card>
+                        
+                        <Box
+                          sx={{
+                            border: '2px dashed',
+                            borderColor: photoPreview ? '#10B981' : alpha(theme.palette.primary.main, 0.3),
+                            borderRadius: 2,
+                            p: isMobile ? 2 : 3,
+                            position: 'relative',
+                            cursor: 'pointer',
+                            minHeight: isMobile ? 160 : 200,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              borderColor: '#D4AF37',
+                              backgroundColor: alpha('#D4AF37', 0.02),
+                            }
+                          }}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handlePhotoUpload}
+                            ref={fileInputRef}
+                            style={{ display: 'none' }}
+                          />
+                          
+                          {photoPreview ? (
+                            <>
+                              <Avatar
+                                src={photoPreview}
+                                sx={{
+                                  width: isMobile ? 100 : 120,
+                                  height: isMobile ? 100 : 120,
+                                  mb: 2,
+                                  border: '3px solid #D4AF37',
+                                  boxShadow: 1,
+                                }}
+                              />
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="error"
+                                onClick={removePhoto}
+                                startIcon={<DeleteIcon />}
+                                sx={{ 
+                                  borderRadius: 1,
+                                  textTransform: 'none',
+                                  fontWeight: 500
+                                }}
+                              >
+                                Changer
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <CameraIcon sx={{ 
+                                fontSize: isMobile ? 40 : 48, 
+                                color: alpha(theme.palette.text.secondary, 0.5),
+                                mb: 2 
+                              }} />
+                              <Typography variant="body2" sx={{ 
+                                color: 'text.secondary',
+                                textAlign: 'center',
+                                mb: 1,
+                                fontWeight: 500
+                              }}>
+                                Cliquez pour uploader
+                              </Typography>
+                              <Typography variant="caption" sx={{ 
+                                color: 'text.secondary',
+                                textAlign: 'center',
+                                display: 'block'
+                              }}>
+                                JPG, PNG, WebP (max 5MB)
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+                        
+                        {errors.photo && (
+                          <Typography color="error" variant="caption" sx={{ mt: 1, display: 'block' }}>
+                            <ErrorIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                            {errors.photo[0]}
+                          </Typography>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </Grow>
                 </Grid>
 
                 {/* Form Fields */}
                 <Grid item xs={12} md={8}>
                   <Grid container spacing={isMobile ? 2 : 3}>
                     {[
-                      { name: 'nom', label: 'Nom *', icon: <PersonIcon />, gridSize: 6 },
-                      { name: 'prenoms', label: 'Prénoms *', icon: null, gridSize: 6 },
-                      { name: 'email', label: 'Email *', icon: <EmailIcon />, gridSize: 12 },
-                      { name: 'telephone', label: 'Téléphone *', icon: <PhoneIcon />, gridSize: 6 },
-                      { name: 'date_naissance', label: 'Date de naissance *', icon: <CalendarIcon />, gridSize: 6, type: 'date' },
+                      { name: 'nom', label: 'Nom *', icon: <PersonIcon />, gridSize: 6, animationDelay: 100 },
+                      { name: 'prenoms', label: 'Prénoms *', icon: null, gridSize: 6, animationDelay: 200 },
+                      { name: 'email', label: 'Email *', icon: <EmailIcon />, gridSize: 12, animationDelay: 300 },
+                      { name: 'telephone', label: 'Téléphone *', icon: <PhoneIcon />, gridSize: 6, animationDelay: 400 },
+                      { name: 'date_naissance', label: 'Date de naissance *', icon: <CalendarIcon />, gridSize: 6, type: 'date', animationDelay: 500 },
                     ].map((field) => (
                       <Grid item xs={12} sm={field.gridSize} key={field.name}>
+                        <Slide direction="up" in timeout={field.animationDelay}>
+                          <Box>
+                            <Controller
+                              name={field.name}
+                              control={control}
+                              render={({ field: controllerField, fieldState }) => (
+                                <TextField
+                                  {...controllerField}
+                                  fullWidth
+                                  label={field.label}
+                                  type={field.type || 'text'}
+                                  InputLabelProps={field.type === 'date' ? { shrink: true } : {}}
+                                  error={!!fieldState.error || !!errors[field.name]}
+                                  helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: field.icon ? (
+                                      <InputAdornment position="start">
+                                        {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
+                                      </InputAdornment>
+                                    ) : undefined,
+                                    sx: {
+                                      borderRadius: 1,
+                                      '& input': {
+                                        py: isMobile ? 1.25 : 1.5
+                                      }
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Box>
+                        </Slide>
+                      </Grid>
+                    ))}
+
+                    {/* Sexe */}
+                    <Grid item xs={12}>
+                      <Slide direction="up" in timeout={600}>
+                        <Box>
+                          <Controller
+                            name="sexe"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                              <FormControl fullWidth error={!!fieldState.error || !!errors.sexe}>
+                                <FormLabel sx={{ 
+                                  mb: 1,
+                                  fontWeight: 500,
+                                  fontSize: isMobile ? '0.875rem' : '0.9375rem',
+                                  color: 'text.primary'
+                                }}>
+                                  Sexe *
+                                </FormLabel>
+                                <Select
+                                  {...field}
+                                  displayEmpty
+                                  value={field.value || ''}
+                                  sx={{ 
+                                    borderRadius: 1,
+                                    '& .MuiSelect-select': {
+                                      py: isMobile ? 1.25 : 1.5
+                                    }
+                                  }}
+                                >
+                                  <MenuItem value="" disabled>
+                                    Sélectionnez votre sexe
+                                  </MenuItem>
+                                  <MenuItem value="M">Masculin</MenuItem>
+                                  <MenuItem value="F">Féminin</MenuItem>
+                                </Select>
+                                {(fieldState.error || errors.sexe) && (
+                                  <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                    <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                    {fieldState.error?.message || errors.sexe?.[0]}
+                                  </Typography>
+                                )}
+                              </FormControl>
+                            )}
+                          />
+                        </Box>
+                      </Slide>
+                    </Grid>
+                  </Grid>
+                </Grid>
+              </Grid>
+            </Box>
+          </Fade>
+        );
+
+      case 1:
+        return (
+          <Zoom in timeout={500}>
+            <Box>
+              <Typography variant="h6" sx={{ 
+                fontWeight: 600, 
+                mb: 3, 
+                color: '#8B0000',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                fontSize: isMobile ? '1.1rem' : '1.25rem'
+              }}>
+                <SchoolIcon /> Informations académiques
+              </Typography>
+              
+              <Grid container spacing={isMobile ? 2 : 3}>
+                {[
+                  { name: 'origine', label: 'Ville/Région d\'origine *', icon: <LocationIcon />, gridSize: 6, delay: 100 },
+                  { name: 'ethnie', label: 'Ethnie (optionnel)', icon: <LanguageIcon />, gridSize: 6, delay: 200 },
+                  { name: 'universite', label: 'Université/École *', icon: <SchoolIcon />, gridSize: 12, delay: 300 },
+                  { name: 'filiere', label: 'Filière *', icon: null, gridSize: 8, delay: 400 },
+                ].map((field) => (
+                  <Grid item xs={12} sm={field.gridSize} key={field.name}>
+                    <Slide direction="left" in timeout={field.delay}>
+                      <Box>
                         <Controller
                           name={field.name}
                           control={control}
@@ -681,8 +807,6 @@ const Postuler = () => {
                               {...controllerField}
                               fullWidth
                               label={field.label}
-                              type={field.type || 'text'}
-                              InputLabelProps={field.type === 'date' ? { shrink: true } : {}}
                               error={!!fieldState.error || !!errors[field.name]}
                               helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
                               InputProps={{
@@ -701,23 +825,26 @@ const Postuler = () => {
                             />
                           )}
                         />
-                      </Grid>
-                    ))}
+                      </Box>
+                    </Slide>
+                  </Grid>
+                ))}
 
-                    {/* Sexe */}
-                    <Grid item xs={12}>
+                {/* Année d'étude */}
+                <Grid item xs={12} sm={4}>
+                  <Slide direction="left" in timeout={500}>
+                    <Box>
                       <Controller
-                        name="sexe"
+                        name="annee_etude"
                         control={control}
                         render={({ field, fieldState }) => (
-                          <FormControl fullWidth error={!!fieldState.error || !!errors.sexe}>
+                          <FormControl fullWidth error={!!fieldState.error || !!errors.annee_etude}>
                             <FormLabel sx={{ 
                               mb: 1,
                               fontWeight: 500,
-                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                              color: 'text.primary'
+                              fontSize: isMobile ? '0.875rem' : '0.9375rem'
                             }}>
-                              Sexe *
+                              Année d'étude *
                             </FormLabel>
                             <Select
                               {...field}
@@ -731,125 +858,26 @@ const Postuler = () => {
                               }}
                             >
                               <MenuItem value="" disabled>
-                                Sélectionnez votre sexe
+                                Sélectionnez votre année
                               </MenuItem>
-                              <MenuItem value="M">Masculin</MenuItem>
-                              <MenuItem value="F">Féminin</MenuItem>
+                              <MenuItem value="Licence 1">Licence 1</MenuItem>
+                              <MenuItem value="Licence 2">Licence 2</MenuItem>
+                              <MenuItem value="Licence 3">Licence 3</MenuItem>
+                              <MenuItem value="Master 1">Master 1</MenuItem>
+                              <MenuItem value="Master 2">Master 2</MenuItem>
+                              <MenuItem value="Doctorat">Doctorat</MenuItem>
                             </Select>
-                            {(fieldState.error || errors.sexe) && (
+                            {(fieldState.error || errors.annee_etude) && (
                               <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
                                 <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                {fieldState.error?.message || errors.sexe?.[0]}
+                                {fieldState.error?.message || errors.annee_etude?.[0]}
                               </Typography>
                             )}
                           </FormControl>
                         )}
                       />
-                    </Grid>
-                  </Grid>
-                </Grid>
-              </Grid>
-            </Box>
-          </Fade>
-        );
-
-      case 1:
-        return (
-          <Zoom in timeout={300}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <SchoolIcon /> Informations académiques
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {[
-                  { name: 'origine', label: 'Ville/Région d\'origine *', icon: <LocationIcon />, gridSize: 6 },
-                  { name: 'ethnie', label: 'Ethnie (optionnel)', icon: <LanguageIcon />, gridSize: 6 },
-                  { name: 'universite', label: 'Université/École *', icon: <SchoolIcon />, gridSize: 12 },
-                  { name: 'filiere', label: 'Filière *', icon: null, gridSize: 8 },
-                ].map((field) => (
-                  <Grid item xs={12} sm={field.gridSize} key={field.name}>
-                    <Controller
-                      name={field.name}
-                      control={control}
-                      render={({ field: controllerField, fieldState }) => (
-                        <TextField
-                          {...controllerField}
-                          fullWidth
-                          label={field.label}
-                          error={!!fieldState.error || !!errors[field.name]}
-                          helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
-                          InputProps={{
-                            startAdornment: field.icon ? (
-                              <InputAdornment position="start">
-                                {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
-                              </InputAdornment>
-                            ) : undefined,
-                            sx: {
-                              borderRadius: 1,
-                              '& input': {
-                                py: isMobile ? 1.25 : 1.5
-                              }
-                            }
-                          }}
-                        />
-                      )}
-                    />
-                  </Grid>
-                ))}
-
-                {/* Année d'étude */}
-                <Grid item xs={12} sm={4}>
-                  <Controller
-                    name="annee_etude"
-                    control={control}
-                    render={({ field, fieldState }) => (
-                      <FormControl fullWidth error={!!fieldState.error || !!errors.annee_etude}>
-                        <FormLabel sx={{ 
-                          mb: 1,
-                          fontWeight: 500,
-                          fontSize: isMobile ? '0.875rem' : '0.9375rem'
-                        }}>
-                          Année d'étude *
-                        </FormLabel>
-                        <Select
-                          {...field}
-                          displayEmpty
-                          value={field.value || ''}
-                          sx={{ 
-                            borderRadius: 1,
-                            '& .MuiSelect-select': {
-                              py: isMobile ? 1.25 : 1.5
-                            }
-                          }}
-                        >
-                          <MenuItem value="" disabled>
-                            Sélectionnez votre année
-                          </MenuItem>
-                          <MenuItem value="Licence 1">Licence 1</MenuItem>
-                          <MenuItem value="Licence 2">Licence 2</MenuItem>
-                          <MenuItem value="Licence 3">Licence 3</MenuItem>
-                          <MenuItem value="Master 1">Master 1</MenuItem>
-                          <MenuItem value="Master 2">Master 2</MenuItem>
-                          <MenuItem value="Doctorat">Doctorat</MenuItem>
-                        </Select>
-                        {(fieldState.error || errors.annee_etude) && (
-                          <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                            {fieldState.error?.message || errors.annee_etude?.[0]}
-                          </Typography>
-                        )}
-                      </FormControl>
-                    )}
-                  />
+                    </Box>
+                  </Slide>
                 </Grid>
               </Grid>
             </Box>
@@ -858,7 +886,7 @@ const Postuler = () => {
 
       case 2:
         return (
-          <Slide direction="left" in timeout={300}>
+          <Slide direction="right" in timeout={500}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -878,6 +906,12 @@ const Postuler = () => {
                 sx={{ 
                   mb: 3, 
                   borderRadius: 2,
+                  animation: 'pulse 2s infinite',
+                  '@keyframes pulse': {
+                    '0%': { opacity: 1 },
+                    '50%': { opacity: 0.8 },
+                    '100%': { opacity: 1 }
+                  }
                 }}
               >
                 <Typography variant="body2">
@@ -891,137 +925,36 @@ const Postuler = () => {
               <Grid container spacing={isMobile ? 2 : 3}>
                 {/* Édition */}
                 <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.edition_id ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Controller
-                        name="edition_id"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <FormControl fullWidth error={!!fieldState.error || !!errors.edition_id}>
-                            <FormLabel sx={{ 
-                              mb: 1,
-                              fontWeight: 600,
-                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                              color: 'text.primary'
-                            }}>
-                              Édition *
-                            </FormLabel>
-                            <Select
-                              {...field}
-                              displayEmpty
-                              value={field.value || ''}
-                              disabled={editionsLoading || editionsFetching}
-                              sx={{ 
-                                borderRadius: 1,
-                                '& .MuiSelect-select': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }}
-                            >
-                              <MenuItem value="" disabled>
-                                {editionsLoading ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <CircularProgress size={16} />
-                                    Chargement des éditions...
-                                  </Box>
-                                ) : editionsError ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
-                                    <ErrorIcon fontSize="small" />
-                                    Erreur de chargement
-                                  </Box>
-                                ) : editions.length === 0 ? (
-                                  'Aucune édition ouverte aux inscriptions'
-                                ) : 'Sélectionnez une édition'}
-                              </MenuItem>
-                              {editions.map((edition) => (
-                                <MenuItem key={edition.id} value={edition.id}>
-                                  <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                                      {edition.nom}
-                                    </Typography>
-                                    <Box sx={{ 
-                                      display: 'flex', 
-                                      justifyContent: 'space-between',
-                                      mt: 0.5,
-                                      flexWrap: 'wrap',
-                                      gap: 1
-                                    }}>
-                                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                        {edition.annee} • {edition.numero_edition}ème édition
-                                      </Typography>
-                                      {edition.date_fin_inscriptions && (
-                                        <Typography variant="caption" sx={{ 
-                                          color: 'error.main',
-                                          fontWeight: 500,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: 0.5
-                                        }}>
-                                          <TimeIcon fontSize="inherit" />
-                                          Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
-                                        </Typography>
-                                      )}
-                                    </Box>
-                                  </Box>
-                                </MenuItem>
-                              ))}
-                            </Select>
-                            {(fieldState.error || errors.edition_id) && (
-                              <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                {fieldState.error?.message || errors.edition_id?.[0]}
-                              </Typography>
-                            )}
-                          </FormControl>
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Catégorie */}
-                {watchedEditionId && (
-                  <Grid item xs={12}>
+                  <Grow in timeout={600}>
                     <Card sx={{ 
                       borderRadius: 2,
                       border: '2px solid',
-                      borderColor: formErrors.category_id ? 'error.main' : 'divider',
+                      borderColor: formErrors.edition_id ? 'error.main' : 'divider',
                       transition: 'all 0.3s ease',
                       '&:hover': {
                         borderColor: '#D4AF37',
+                        transform: 'translateY(-2px)',
                       }
                     }}>
                       <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                         <Controller
-                          name="category_id"
+                          name="edition_id"
                           control={control}
                           render={({ field, fieldState }) => (
-                            <FormControl 
-                              fullWidth 
-                              error={!!fieldState.error || !!errors.category_id}
-                              disabled={categoriesLoading || categoriesError || categoriesFetching}
-                            >
+                            <FormControl fullWidth error={!!fieldState.error || !!errors.edition_id}>
                               <FormLabel sx={{ 
                                 mb: 1,
                                 fontWeight: 600,
                                 fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                                color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
+                                color: 'text.primary'
                               }}>
-                                Catégorie *
+                                Édition *
                               </FormLabel>
                               <Select
                                 {...field}
                                 displayEmpty
                                 value={field.value || ''}
-                                disabled={categoriesLoading || categoriesError || categoriesFetching}
+                                disabled={editionsLoading || editionsFetching}
                                 sx={{ 
                                   borderRadius: 1,
                                   '& .MuiSelect-select': {
@@ -1030,33 +963,46 @@ const Postuler = () => {
                                 }}
                               >
                                 <MenuItem value="" disabled>
-                                  {categoriesLoading || categoriesFetching ? (
+                                  {editionsLoading ? (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                       <CircularProgress size={16} />
-                                      Chargement des catégories...
+                                      Chargement des éditions...
                                     </Box>
-                                  ) : categoriesError ? (
+                                  ) : editionsError ? (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
                                       <ErrorIcon fontSize="small" />
                                       Erreur de chargement
                                     </Box>
-                                  ) : categories.length === 0 ? (
-                                    'Aucune catégorie disponible pour cette édition'
-                                  ) : 'Sélectionnez une catégorie'}
+                                  ) : editions.length === 0 ? (
+                                    'Aucune édition ouverte aux inscriptions'
+                                  ) : 'Sélectionnez une édition'}
                                 </MenuItem>
-                                {categories.map((category) => (
-                                  <MenuItem key={category.id} value={category.id}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                                      <CategoryIcon sx={{ mr: 2, color: '#8B0000' }} />
-                                      <Box sx={{ flex: 1 }}>
-                                        <Typography variant="body1">{category.nom}</Typography>
-                                        {category.description && (
+                                {editions.map((edition, index) => (
+                                  <MenuItem key={edition.id} value={edition.id}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                                        {edition.nom}
+                                      </Typography>
+                                      <Box sx={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between',
+                                        mt: 0.5,
+                                        flexWrap: 'wrap',
+                                        gap: 1
+                                      }}>
+                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                          {edition.annee} • {edition.numero_edition}ème édition
+                                        </Typography>
+                                        {edition.date_fin_inscriptions && (
                                           <Typography variant="caption" sx={{ 
-                                            color: 'text.secondary',
-                                            display: 'block',
-                                            mt: 0.5
+                                            color: 'error.main',
+                                            fontWeight: 500,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 0.5
                                           }}>
-                                            {category.description}
+                                            <TimeIcon fontSize="inherit" />
+                                            Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
                                           </Typography>
                                         )}
                                       </Box>
@@ -1064,10 +1010,10 @@ const Postuler = () => {
                                   </MenuItem>
                                 ))}
                               </Select>
-                              {(fieldState.error || errors.category_id) && (
+                              {(fieldState.error || errors.edition_id) && (
                                 <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
                                   <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                  {fieldState.error?.message || errors.category_id?.[0]}
+                                  {fieldState.error?.message || errors.edition_id?.[0]}
                                 </Typography>
                               )}
                             </FormControl>
@@ -1075,84 +1021,186 @@ const Postuler = () => {
                         />
                       </CardContent>
                     </Card>
+                  </Grow>
+                </Grid>
+
+                {/* Catégorie */}
+                {watchedEditionId && (
+                  <Grid item xs={12}>
+                    <Grow in timeout={800}>
+                      <Card sx={{ 
+                        borderRadius: 2,
+                        border: '2px solid',
+                        borderColor: formErrors.category_id ? 'error.main' : 'divider',
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          borderColor: '#D4AF37',
+                          transform: 'translateY(-2px)',
+                        }
+                      }}>
+                        <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                          <Controller
+                            name="category_id"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                              <FormControl 
+                                fullWidth 
+                                error={!!fieldState.error || !!errors.category_id}
+                                disabled={categoriesLoading || categoriesError || categoriesFetching}
+                              >
+                                <FormLabel sx={{ 
+                                  mb: 1,
+                                  fontWeight: 600,
+                                  fontSize: isMobile ? '0.875rem' : '0.9375rem',
+                                  color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
+                                }}>
+                                  Catégorie *
+                                </FormLabel>
+                                <Select
+                                  {...field}
+                                  displayEmpty
+                                  value={field.value || ''}
+                                  disabled={categoriesLoading || categoriesError || categoriesFetching}
+                                  sx={{ 
+                                    borderRadius: 1,
+                                    '& .MuiSelect-select': {
+                                      py: isMobile ? 1.25 : 1.5
+                                    }
+                                  }}
+                                >
+                                  <MenuItem value="" disabled>
+                                    {categoriesLoading || categoriesFetching ? (
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <CircularProgress size={16} />
+                                        Chargement des catégories...
+                                      </Box>
+                                    ) : categoriesError ? (
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
+                                        <ErrorIcon fontSize="small" />
+                                        Erreur de chargement
+                                      </Box>
+                                    ) : categories.length === 0 ? (
+                                      'Aucune catégorie disponible pour cette édition'
+                                    ) : 'Sélectionnez une catégorie'}
+                                  </MenuItem>
+                                  {categories.map((category, index) => (
+                                    <MenuItem key={category.id} value={category.id}>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                        <CategoryIcon sx={{ mr: 2, color: '#8B0000' }} />
+                                        <Box sx={{ flex: 1 }}>
+                                          <Typography variant="body1">{category.nom}</Typography>
+                                          {category.description && (
+                                            <Typography variant="caption" sx={{ 
+                                              color: 'text.secondary',
+                                              display: 'block',
+                                              mt: 0.5
+                                            }}>
+                                              {category.description}
+                                            </Typography>
+                                          )}
+                                        </Box>
+                                      </Box>
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                                {(fieldState.error || errors.category_id) && (
+                                  <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                    <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                    {fieldState.error?.message || errors.category_id?.[0]}
+                                  </Typography>
+                                )}
+                              </FormControl>
+                            )}
+                          />
+                        </CardContent>
+                      </Card>
+                    </Grow>
                   </Grid>
                 )}
 
                 {/* Détails édition */}
                 {getCurrentEdition() && (
                   <Grid item xs={12}>
-                    <Card sx={{ 
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
-                      border: '1px solid rgba(212, 175, 55, 0.3)',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: 2,
-                      },
-                      transition: 'all 0.3s ease'
-                    }}>
-                      <CardContent>
-                        <Typography variant="subtitle2" sx={{ 
-                          fontWeight: 600, 
-                          mb: 2, 
-                          color: '#8B0000',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1
-                        }}>
-                          <InfoIcon fontSize="small" />
-                          Détails de l'édition sélectionnée
-                        </Typography>
-                        
-                        <Grid container spacing={isMobile ? 1 : 2}>
-                          <Grid item xs={12} md={6}>
-                            <Stack spacing={1}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TrophyIcon sx={{ fontSize: 16, color: '#8B0000' }} />
-                                <Typography variant="body2">
-                                  <strong>Nom :</strong> {getCurrentEdition().nom}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Année :</strong> {getCurrentEdition().annee}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Numéro :</strong> {getCurrentEdition().numero_edition}ème édition
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Grid>
+                    <Fade in timeout={1000}>
+                      <Card sx={{ 
+                        borderRadius: 2,
+                        background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
+                        border: '1px solid rgba(212, 175, 55, 0.3)',
+                        '&:hover': {
+                          transform: 'translateY(-2px)',
+                          boxShadow: 2,
+                        },
+                        transition: 'all 0.3s ease',
+                        animation: 'glow 2s infinite alternate',
+                        '@keyframes glow': {
+                          '0%': { boxShadow: '0 0 5px rgba(212, 175, 55, 0.3)' },
+                          '100%': { boxShadow: '0 0 20px rgba(212, 175, 55, 0.6)' }
+                        }
+                      }}>
+                        <CardContent>
+                          <Typography variant="subtitle2" sx={{ 
+                            fontWeight: 600, 
+                            mb: 2, 
+                            color: '#8B0000',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }}>
+                            <CelebrationIcon fontSize="small" />
+                            Détails de l'édition sélectionnée
+                          </Typography>
                           
-                          <Grid item xs={12} md={6}>
-                            <Stack spacing={1}>
-                              {getCurrentEdition().date_fin_inscriptions && (
+                          <Grid container spacing={isMobile ? 1 : 2}>
+                            <Grid item xs={12} md={6}>
+                              <Stack spacing={1}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <TimeIcon sx={{ fontSize: 16, color: 'error.main' }} />
-                                  <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 500 }}>
-                                    <strong>Clôture :</strong> {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}
+                                  <TrophyIcon sx={{ fontSize: 16, color: '#8B0000' }} />
+                                  <Typography variant="body2">
+                                    <strong>Nom :</strong> {getCurrentEdition().nom}
                                   </Typography>
                                 </Box>
-                              )}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Catégories :</strong> {categories?.length || 0} disponible(s)
-                                </Typography>
-                              </Box>
-                              {getCurrentCategory() && (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 500 }}>
-                                    <strong>Votre choix :</strong> {getCurrentCategory()?.nom}
+                                  <Typography variant="body2">
+                                    <strong>Année :</strong> {getCurrentEdition().annee}
                                   </Typography>
                                 </Box>
-                              )}
-                            </Stack>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography variant="body2">
+                                    <strong>Numéro :</strong> {getCurrentEdition().numero_edition}ème édition
+                                  </Typography>
+                                </Box>
+                              </Stack>
+                            </Grid>
+                            
+                            <Grid item xs={12} md={6}>
+                              <Stack spacing={1}>
+                                {getCurrentEdition().date_fin_inscriptions && (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <TimeIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                                    <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 500 }}>
+                                      <strong>Clôture :</strong> {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}
+                                    </Typography>
+                                  </Box>
+                                )}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography variant="body2">
+                                    <strong>Catégories :</strong> {categories?.length || 0} disponible(s)
+                                  </Typography>
+                                </Box>
+                                {getCurrentCategory() && (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <CheckIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                                    <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 500 }}>
+                                      <strong>Votre choix :</strong> {getCurrentCategory()?.nom}
+                                    </Typography>
+                                  </Box>
+                                )}
+                              </Stack>
+                            </Grid>
                           </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
+                        </CardContent>
+                      </Card>
+                    </Fade>
                   </Grid>
                 )}
               </Grid>
@@ -1162,7 +1210,7 @@ const Postuler = () => {
 
       case 3:
         return (
-          <Collapse in timeout={300}>
+          <Collapse in timeout={500}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1177,50 +1225,123 @@ const Postuler = () => {
               </Typography>
               
               <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Vidéo Upload */}
+                {/* Vidéo URL */}
                 <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: videoPreview ? '#10B981' : 
-                              (formErrors.video_url || formErrors.videoFile) ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
-                        <FormLabel sx={{ 
-                          mb: 1,
-                          fontWeight: 600,
-                          fontSize: isMobile ? '0.875rem' : '0.9375rem'
-                        }}>
-                          Vidéo de présentation *
-                        </FormLabel>
-                        
+                  <Grow in timeout={600}>
+                    <Card sx={{ 
+                      borderRadius: 2,
+                      border: '2px solid',
+                      borderColor: formErrors.video_url ? 'error.main' : 'divider',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        borderColor: '#D4AF37',
+                        transform: 'translateY(-2px)',
+                      }
+                    }}>
+                      <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                         <Controller
                           name="video_url"
                           control={control}
                           render={({ field, fieldState }) => (
+                            <FormControl fullWidth error={!!fieldState.error || !!errors.video_url}>
+                              <FormLabel sx={{ 
+                                mb: 1,
+                                fontWeight: 600,
+                                fontSize: isMobile ? '0.875rem' : '0.9375rem'
+                              }}>
+                                Lien de la vidéo de présentation *
+                              </FormLabel>
+                              
+                              <TextField
+                                fullWidth
+                                label="URL YouTube, TikTok, Vimeo, etc."
+                                {...field}
+                                error={!!fieldState.error || !!errors.video_url}
+                                helperText={
+                                  (fieldState.error?.message || errors.video_url?.[0]) || 
+                                  "Collez le lien de votre vidéo de démonstration"
+                                }
+                                InputProps={{
+                                  startAdornment: (
+                                    <InputAdornment position="start">
+                                      <VideoIcon sx={{ color: '#8B0000' }} />
+                                    </InputAdornment>
+                                  ),
+                                  sx: {
+                                    borderRadius: 1,
+                                    '& input': {
+                                      py: isMobile ? 1.25 : 1.5
+                                    }
+                                  }
+                                }}
+                              />
+                            </FormControl>
+                          )}
+                        />
+                      </CardContent>
+                    </Card>
+                  </Grow>
+                </Grid>
+
+                {/* Description - Optionnelle */}
+                <Grid item xs={12}>
+                  <Grow in timeout={800}>
+                    <Card sx={{ 
+                      borderRadius: 2,
+                      border: '2px solid',
+                      borderColor: formErrors.description_talent ? 'error.main' : 'divider',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        borderColor: '#D4AF37',
+                        transform: 'translateY(-2px)',
+                      }
+                    }}>
+                      <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                        <Controller
+                          name="description_talent"
+                          control={control}
+                          render={({ field, fieldState }) => (
                             <TextField
-                              fullWidth
-                              label="URL de vôtre vidéo"
                               {...field}
-                              error={!!fieldState.error || !!errors.video_url}
+                              fullWidth
+                              label="Description de votre talent (optionnel)"
+                              multiline
+                              rows={isMobile ? 4 : 6}
+                              error={!!fieldState.error || !!errors.description_talent}
                               helperText={
-                                (fieldState.error?.message || errors.video_url?.[0]) || 
-                                "Lien Tiktok YouTube, Vimeo, ou autre plateforme"
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  justifyContent: 'space-between',
+                                  mt: 0.5,
+                                  alignItems: 'center'
+                                }}>
+                                  <span>
+                                    {fieldState.error?.message || errors.description_talent?.[0] || 
+                                     'Décrivez votre talent, votre expérience, vos réalisations...'}
+                                  </span>
+                                  <Chip 
+                                    size="small"
+                                    label={`${field.value?.length || 0}/2000`}
+                                    color={
+                                      (field.value?.length || 0) > 2000 ? 'error' : 'default'
+                                    }
+                                    sx={{ 
+                                      fontWeight: 500,
+                                      fontSize: '0.75rem'
+                                    }}
+                                  />
+                                </Box>
                               }
+                              placeholder="Parlez-nous de votre talent, de votre passion, de vos inspirations..."
                               InputProps={{
                                 startAdornment: (
                                   <InputAdornment position="start">
-                                    <VideoIcon sx={{ color: '#8B0000' }} />
+                                    <DescriptionIcon sx={{ color: '#8B0000' }} />
                                   </InputAdornment>
                                 ),
                                 sx: {
                                   borderRadius: 1,
-                                  '& input': {
+                                  '& textarea': {
                                     py: isMobile ? 1.25 : 1.5
                                   }
                                 }
@@ -1228,99 +1349,36 @@ const Postuler = () => {
                             />
                           )}
                         />
-                        
-                        {(formErrors.video_url || formErrors.videoFile) && (
-                          <Typography color="error" variant="caption" sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
-                            <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                            {formErrors.video_url?.message || formErrors.videoFile?.message || 'Vidéo requise'}
-                          </Typography>
-                        )}
-                      </FormControl>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Description */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.description_talent ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Controller
-                        name="description_talent"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <TextField
-                            {...field}
-                            fullWidth
-                            label="Description de votre talent *"
-                            multiline
-                            rows={isMobile ? 4 : 6}
-                            error={!!fieldState.error || !!errors.description_talent}
-                            helperText={
-                              <Box sx={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between',
-                                mt: 0.5,
-                                alignItems: 'center'
-                              }}>
-                                <span>
-                                  {fieldState.error?.message || errors.description_talent?.[0] || 
-                                   (field.value?.length < 100 
-                                     ? `Minimum ${100 - (field.value?.length || 0)} caractères restants` 
-                                     : 'Description suffisante')}
-                                </span>
-                                <Chip 
-                                  size="small"
-                                  label={`${field.value?.length || 0}/2000`}
-                                  color={
-                                    (field.value?.length || 0) > 2000 ? 'error' : 
-                                    (field.value?.length || 0) >= 100 ? 'success' : 'default'
-                                  }
-                                  sx={{ 
-                                    fontWeight: 500,
-                                    fontSize: '0.75rem'
-                                  }}
-                                />
-                              </Box>
-                            }
-                            placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
-                            InputProps={{
-                              sx: {
-                                borderRadius: 1,
-                                '& textarea': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }
-                            }}
-                          />
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </Grow>
                 </Grid>
 
                 {/* Avertissement */}
                 <Grid item xs={12}>
-                  <Alert 
-                    severity="warning" 
-                    icon={<WarningIcon />}
-                    sx={{ 
-                      borderRadius: 2,
-                    }}
-                  >
-                    <Typography variant="body2" sx={{ fontSize: isMobile ? '0.875rem' : '1rem' }}>
-                      <strong>Important :</strong> Votre candidature sera soumise pour validation. 
-                      Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
-                      Vérifiez bien toutes les informations avant de soumettre.
-                    </Typography>
-                  </Alert>
+                  <Fade in timeout={1000}>
+                    <Alert 
+                      severity="warning" 
+                      icon={<WarningIcon />}
+                      sx={{ 
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'warning.main',
+                        animation: 'shake 0.5s ease-in-out',
+                        '@keyframes shake': {
+                          '0%, 100%': { transform: 'translateX(0)' },
+                          '25%': { transform: 'translateX(-5px)' },
+                          '75%': { transform: 'translateX(5px)' }
+                        }
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontSize: isMobile ? '0.875rem' : '1rem' }}>
+                        <strong>Important :</strong> Votre candidature sera soumise pour validation. 
+                        Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
+                        Vérifiez bien toutes les informations avant de soumettre.
+                      </Typography>
+                    </Alert>
+                  </Fade>
                 </Grid>
               </Grid>
             </Box>
@@ -1339,7 +1397,7 @@ const Postuler = () => {
       <Dialog open={true} maxWidth="md" fullWidth fullScreen={isMobile}>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-            <CircularProgress size={60} sx={{ color: '#8B0000', mb: 3 }} />
+            <CircularProgress size={60} sx={{ color: '#8B0000', mb: 3, animation: 'spin 2s linear infinite' }} />
             <Typography variant="h6" sx={{ color: '#8B0000', fontWeight: 600 }}>
               Chargement du formulaire...
             </Typography>
@@ -1354,11 +1412,16 @@ const Postuler = () => {
 
   return (
     <Dialog
-      open={true}
+      open={dialogOpen}
       onClose={handleClose}
       maxWidth="md"
       fullWidth
       fullScreen={isMobile}
+      TransitionProps={{
+        timeout: 500,
+        mountOnEnter: true,
+        unmountOnExit: true,
+      }}
       PaperProps={{
         sx: {
           maxHeight: '100vh',
@@ -1366,6 +1429,9 @@ const Postuler = () => {
           borderRadius: isMobile ? 0 : 2,
           overflow: 'hidden',
           background: 'white',
+          opacity: animateIn ? 1 : 0,
+          transform: animateIn ? 'translateY(0)' : 'translateY(-20px)',
+          transition: 'all 0.5s ease',
         }
       }}
     >
@@ -1374,7 +1440,17 @@ const Postuler = () => {
         background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
         padding: isMobile ? '20px 16px' : '24px 32px',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'url("/pattern.png")',
+          opacity: 0.1,
+        }
       }}>
         <Box sx={{ 
           display: 'flex', 
@@ -1396,28 +1472,29 @@ const Postuler = () => {
                 justifyContent: 'center',
                 overflow: 'hidden',
                 border: '3px solid white',
-                boxShadow: 2,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                animation: 'pulse 2s infinite',
               }}
             >
               <img 
-                      src="/logo.png" 
-                      alt="Logo" 
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.style.display = 'none';
-                        const parent = e.target.parentElement;
-                        parent.innerHTML = `
-                          <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
-                            SYT
-                          </span>
-                        `;
-                      }}
-                    />
+                src="/logo.png" 
+                alt="Logo" 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                }}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.style.display = 'none';
+                  const parent = e.target.parentElement;
+                  parent.innerHTML = `
+                    <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
+                      SYT
+                    </span>
+                  `;
+                }}
+              />
             </Box>
             <Box>
               <Typography
@@ -1425,7 +1502,8 @@ const Postuler = () => {
                 sx={{
                   fontWeight: 800,
                   color: 'white',
-                  lineHeight: 1.2
+                  lineHeight: 1.2,
+                  textShadow: '0 2px 4px rgba(0,0,0,0.2)'
                 }}
               >
                 Postuler à une édition
@@ -1450,8 +1528,9 @@ const Postuler = () => {
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
               '&:hover': {
                 backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                transform: 'rotate(90deg)',
               },
-              transition: 'all 0.2s ease',
+              transition: 'all 0.3s ease',
             }}
           >
             <CloseIcon fontSize={isMobile ? "small" : "medium"} />
@@ -1463,12 +1542,13 @@ const Postuler = () => {
           variant="determinate" 
           value={((activeStep + 1) / steps.length) * 100}
           sx={{ 
-            height: 4, 
-            borderRadius: 2,
+            height: 6, 
+            borderRadius: 3,
             background: 'rgba(255, 255, 255, 0.2)',
             '& .MuiLinearProgress-bar': {
               background: 'linear-gradient(90deg, #FFD700, #D4AF37)',
-              borderRadius: 2,
+              borderRadius: 3,
+              transition: 'transform 0.4s ease',
             }
           }}
         />
@@ -1480,14 +1560,26 @@ const Postuler = () => {
             sx={{ 
               mt: 3,
               '& .MuiStepConnector-root': {
-                top: 12
+                top: 12,
+                '& .MuiStepConnector-line': {
+                  borderColor: 'rgba(255, 255, 255, 0.3)',
+                }
               }
             }}
           >
-            {steps.map((step) => (
+            {steps.map((step, index) => (
               <Step key={step.label}>
                 <StepLabel 
                   sx={{
+                    '& .MuiStepIcon-root': {
+                      color: 'rgba(255, 255, 255, 0.3)',
+                      '&.Mui-active': {
+                        color: '#FFD700',
+                      },
+                      '&.Mui-completed': {
+                        color: '#D4AF37',
+                      }
+                    },
                     '& .MuiStepLabel-label': {
                       color: 'rgba(255, 255, 255, 0.9)',
                       fontWeight: 500,
@@ -1522,26 +1614,27 @@ const Postuler = () => {
           borderRadius: '4px',
         },
         '&::-webkit-scrollbar-thumb': {
-          background: '#D4AF37',
+          background: 'linear-gradient(180deg, #D4AF37, #FFD700)',
           borderRadius: '4px',
           '&:hover': {
-            background: '#c19b2e',
+            background: 'linear-gradient(180deg, #c19b2e, #e6c200)',
           }
         }
       }}>
         {/* Progress d'upload */}
         {isSubmitting && uploadProgress > 0 && (
-          <Box sx={{ mb: 3 }}>
+          <Box sx={{ mb: 3, animation: 'fadeIn 0.5s ease' }}>
             <LinearProgress 
               variant="determinate" 
               value={uploadProgress}
               sx={{ 
-                height: 8, 
-                borderRadius: 4,
+                height: 10, 
+                borderRadius: 5,
                 mb: 1,
                 '& .MuiLinearProgress-bar': {
                   background: 'linear-gradient(90deg, #D4AF37, #FFD700)',
-                  borderRadius: 4,
+                  borderRadius: 5,
+                  transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 }
               }}
             />
@@ -1557,7 +1650,12 @@ const Postuler = () => {
             severity="error" 
             sx={{ 
               mb: 3, 
-              borderRadius: 2
+              borderRadius: 2,
+              animation: 'slideInDown 0.5s ease',
+              '@keyframes slideInDown': {
+                '0%': { transform: 'translateY(-20px)', opacity: 0 },
+                '100%': { transform: 'translateY(0)', opacity: 1 }
+              }
             }}
             onClose={() => setErrors({})}
           >
@@ -1607,12 +1705,13 @@ const Postuler = () => {
                 '&:hover': {
                   backgroundColor: 'rgba(139, 0, 0, 0.04)',
                   borderColor: '#7a0000',
+                  transform: 'translateX(-2px)',
                 },
                 '&.Mui-disabled': {
                   borderColor: '#e5e7eb',
                   color: '#9ca3af',
                 },
-                transition: 'all 0.2s ease',
+                transition: 'all 0.3s ease',
               }}
             >
               Retour
@@ -1643,13 +1742,15 @@ const Postuler = () => {
                     minWidth: isMobile ? '140px' : '180px',
                     '&:hover': {
                       background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
-                      boxShadow: 2,
+                      boxShadow: '0 8px 25px rgba(139, 0, 0, 0.3)',
+                      transform: 'translateY(-2px)',
                     },
                     '&.Mui-disabled': {
                       background: '#e5e7eb',
                       color: '#9ca3af',
                     },
                     transition: 'all 0.3s ease',
+                    animation: isSubmitting ? 'pulse 1.5s infinite' : 'none',
                   }}
                 >
                   {isSubmitting ? 'Soumission...' : 'Soumettre'}
@@ -1670,7 +1771,8 @@ const Postuler = () => {
                     minWidth: isMobile ? '120px' : '150px',
                     '&:hover': {
                       background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
-                      boxShadow: 2,
+                      boxShadow: '0 8px 25px rgba(212, 175, 55, 0.3)',
+                      transform: 'translateY(-2px)',
                     },
                     '&.Mui-disabled': {
                       background: '#e5e7eb',
