@@ -100,23 +100,6 @@ import {
   KeyboardArrowUp as ArrowUpIcon,
   KeyboardArrowDown as ArrowDownIcon,
 } from '@mui/icons-material';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-} from 'recharts';
 
 // Palette de couleurs
 const PALETTE = {
@@ -148,27 +131,11 @@ const cardHoverAnimation = {
   }
 };
 
-// Animation pour les boutons
-const pulseAnimation = {
-  '@keyframes pulse': {
-    '0%': {
-      boxShadow: '0 0 0 0 rgba(212, 175, 55, 0.7)',
-    },
-    '70%': {
-      boxShadow: '0 0 0 10px rgba(212, 175, 55, 0)',
-    },
-    '100%': {
-      boxShadow: '0 0 0 0 rgba(212, 175, 55, 0)',
-    },
-  },
-  animation: 'pulse 2s infinite',
-};
-
 const CandidatDashboard = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading, hasRole, logout } = useAuth();
   
   // États
   const [activeTab, setActiveTab] = useState(0);
@@ -195,24 +162,93 @@ const CandidatDashboard = () => {
   const [chartPeriod, setChartPeriod] = useState('7days');
   const [chartType, setChartType] = useState('line');
 
-  // Récupérer les données du dashboard
+  // Fonction utilitaire pour formater la date
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    try {
+      return new Date(dateString).toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  // Format currency
+  const formatCurrency = (amount) => {
+    const numAmount = Number(amount) || 0;
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'XOF',
+      minimumFractionDigits: 0,
+    }).format(numAmount);
+  };
+
+  // Vérifier l'authentification au chargement
+  useEffect(() => {
+    if (!authLoading && !user) {
+      console.log('Utilisateur non authentifié, redirection vers login');
+      navigate('/login');
+      return;
+    }
+    
+    // Vérifier si l'utilisateur a le rôle candidat
+    if (user && !hasRole('candidat')) {
+      console.log('Utilisateur n\'a pas le rôle candidat, redirection...');
+      toast.error('Accès réservé aux candidats');
+      
+      // Rediriger selon le rôle
+      if (hasRole('admin')) {
+        navigate('/admin/dashboard');
+      } else if (hasRole('promoteur')) {
+        navigate('/promoteur/dashboard');
+      } else {
+        navigate('/');
+      }
+    }
+  }, [user, authLoading, navigate, hasRole]);
+
+  // Récupérer les données du dashboard avec gestion d'erreur d'authentification
   const { 
     data: dashboardData, 
     isLoading: dashboardLoading, 
     error: dashboardError,
     refetch: refetchDashboard 
   } = useQuery({
-    queryKey: ['candidat-dashboard'],
+    queryKey: ['candidat-dashboard', user?.id],
     queryFn: async () => {
       try {
+        console.log('Fetching dashboard data for user:', user?.id);
+        
+        // Vérifier si l'utilisateur est authentifié
+        if (!user) {
+          throw new Error('Utilisateur non authentifié');
+        }
+        
         const response = await axiosInstance.get('/candidat/dashboard/stats');
+        console.log('Dashboard response:', response.data);
         return response.data.data;
       } catch (error) {
         console.error('Erreur chargement dashboard:', error);
+        
+        // Si erreur 401, déconnecter
+        if (error.response?.status === 401) {
+          console.log('Token expiré ou invalide, déconnexion...');
+          logout();
+          toast.error('Session expirée, veuillez vous reconnecter');
+          navigate('/login');
+        }
+        
         throw error;
       }
     },
+    enabled: !!user && hasRole('candidat'), // N'exécuter que si l'utilisateur est authentifié et a le rôle
     refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   // Récupérer les votes avec filtres
@@ -221,7 +257,7 @@ const CandidatDashboard = () => {
     isLoading: votesLoading,
     refetch: refetchVotes 
   } = useQuery({
-    queryKey: ['candidat-votes', filters],
+    queryKey: ['candidat-votes', filters, user?.id],
     queryFn: async () => {
       try {
         const params = new URLSearchParams();
@@ -235,10 +271,14 @@ const CandidatDashboard = () => {
         return response.data.data;
       } catch (error) {
         console.error('Erreur chargement votes:', error);
+        if (error.response?.status === 401) {
+          logout();
+          navigate('/login');
+        }
         return { votes: { data: [] }, stats: {} };
       }
     },
-    enabled: activeTab === 1, // Ne charger que quand l'onglet est actif
+    enabled: !!user && activeTab === 1, // Ne charger que si authentifié et quand l'onglet est actif
   });
 
   // Récupérer l'évolution des votes
@@ -246,7 +286,7 @@ const CandidatDashboard = () => {
     data: evolutionData, 
     isLoading: evolutionLoading 
   } = useQuery({
-    queryKey: ['votes-evolution', selectedStatsEdition, selectedStatsCategory, chartPeriod],
+    queryKey: ['votes-evolution', selectedStatsEdition, selectedStatsCategory, chartPeriod, user?.id],
     queryFn: async () => {
       if (!selectedStatsEdition) return null;
       
@@ -264,10 +304,10 @@ const CandidatDashboard = () => {
         return null;
       }
     },
-    enabled: !!selectedStatsEdition,
+    enabled: !!user && !!selectedStatsEdition,
   });
 
-  // Fonctions utilitaires
+  // Fonction pour obtenir les infos de statut
   const getStatutInfo = (statut) => {
     const statusMap = {
       'en_attente': { 
@@ -319,24 +359,6 @@ const CandidatDashboard = () => {
       icon: <WarningIcon />, 
       bgColor: PALETTE.GRAY_DARK,
     };
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('fr-FR', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   // Gestion du chat
@@ -487,7 +509,33 @@ const CandidatDashboard = () => {
     }));
   };
 
-  // Loading state
+  // État de chargement de l'authentification
+  if (authLoading) {
+    return (
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 6 }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '60vh', 
+          flexDirection: 'column', 
+          gap: 3 
+        }}>
+          <CircularProgress size={60} sx={{ color: PALETTE.GOLD }} />
+          <Typography variant="h6" color={PALETTE.BROWN}>
+            Vérification de l'authentification...
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  // Vérifier si l'utilisateur est authentifié
+  if (!user) {
+    return null; // La redirection est gérée par useEffect
+  }
+
+  // Loading state du dashboard
   if (dashboardLoading) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 6 }}>

@@ -9,10 +9,11 @@ const axiosInstance = axios.create({
   },
 });
 
-// Intercepteur pour ajouter le token
+// Intercepteur pour ajouter le token - CORRECTION ICI
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
+    // Utiliser 'token' au lieu de 'access_token' pour correspondre à AuthContext
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -28,6 +29,8 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      // Supprimer les deux tokens possibles
+      localStorage.removeItem('token');
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
       window.location.href = '/login';
