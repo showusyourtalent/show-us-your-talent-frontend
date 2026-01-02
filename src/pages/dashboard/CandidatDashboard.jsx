@@ -85,6 +85,7 @@ import {
   AttachMoney as MoneyIcon,
   Phone as PhoneIcon,
   Email as EmailIcon,
+  Skeleton,
 } from '@mui/icons-material';
 
 // Palette de couleurs améliorée
