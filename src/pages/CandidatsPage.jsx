@@ -1711,48 +1711,6 @@ const CandidatsPage = () => {
         {/* Statistiques */}
         {renderStats()}
 
-        {/* Message si non connecté et vote ouvert */}
-        {!user && isVoteOpen() && (
-          <Fade in={true}>
-            <Alert 
-              severity="info" 
-              sx={{ 
-                mb: 4,
-                borderRadius: 3,
-                background: `linear-gradient(135deg, ${PALETTE.BROWN} 0%, ${PALETTE.OR} 100%)`,
-                color: PALETTE.WHITE,
-                boxShadow: `0 10px 30px ${PALETTE.BROWN}30`
-              }}
-              action={
-                <Button 
-                  color="inherit" 
-                  variant="outlined"
-                  onClick={() => navigate('/login', { state: { returnUrl: window.location.pathname } })}
-                  sx={{ 
-                    borderColor: PALETTE.WHITE,
-                    color: PALETTE.WHITE,
-                    fontWeight: 'bold',
-                    '&:hover': {
-                      background: 'rgba(255,255,255,0.1)',
-                      borderColor: PALETTE.WHITE
-                    }
-                  }}
-                >
-                  Se connecter
-                </Button>
-              }
-            >
-              <Typography variant="h6" fontWeight="bold">
-                Connectez-vous pour voter !
-              </Typography>
-              <Typography variant="body2">
-                Vous devez être connecté pour pouvoir voter pour vos candidats préférés.
-                Créez un compte gratuitement en moins de 2 minutes.
-              </Typography>
-            </Alert>
-          </Fade>
-        )}
-
         {/* Catégories et candidats */}
         {renderCategories()}
       </Container>
