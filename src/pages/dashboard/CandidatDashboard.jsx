@@ -53,6 +53,7 @@ import {
   ListItemText,
   ListItemAvatar,
   ListItemSecondaryAction,
+  Skeleton,
 } from '@mui/material';
 import {
   EmojiEvents as TrophyIcon,
@@ -85,7 +86,6 @@ import {
   AttachMoney as MoneyIcon,
   Phone as PhoneIcon,
   Email as EmailIcon,
-  Skeleton,
 } from '@mui/icons-material';
 
 // Palette de couleurs améliorée
