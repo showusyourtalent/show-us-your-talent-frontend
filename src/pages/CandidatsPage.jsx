@@ -2271,46 +2271,6 @@ const CandidatsPage = () => {
           gap: 2,
           zIndex: 1000
         }}>
-          {/* Scroll to top button */}
-          <Fab
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            sx={{
-              background: PALETTE.GOLD.GRADIENT,
-              color: PALETTE.NEUTRAL.BLACK,
-              animation: 'float 4s ease-in-out infinite',
-              '&:hover': {
-                background: `linear-gradient(135deg, ${PALETTE.GOLD.DARK} 0%, ${PALETTE.GOLD.PRIMARY} 100%)`,
-                transform: 'scale(1.1) rotate(180deg)'
-              },
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: `0 10px 30px ${PALETTE.GOLD.PRIMARY}40`,
-              width: 56,
-              height: 56
-            }}
-          >
-            <ArrowUpwardIcon />
-          </Fab>
-
-          {/* Refresh button */}
-          <Fab
-            onClick={fetchCandidats}
-            sx={{
-              background: PALETTE.RED.GRADIENT,
-              color: PALETTE.NEUTRAL.WHITE,
-              animation: 'float 4s ease-in-out infinite',
-              animationDelay: '0.5s',
-              '&:hover': {
-                background: `linear-gradient(135deg, ${PALETTE.RED.DARK} 0%, ${PALETTE.RED.PRIMARY} 100%)`,
-                transform: 'scale(1.1) rotate(90deg)'
-              },
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: `0 10px 30px ${PALETTE.RED.PRIMARY}40`,
-              width: 56,
-              height: 56
-            }}
-          >
-            <TrendingUpIcon />
-          </Fab>
         </Box>
       </Container>
     </>
