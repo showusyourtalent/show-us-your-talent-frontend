@@ -32,15 +32,10 @@ import {
   useTheme,
   alpha,
   Chip,
-  Fade,
-  Zoom,
-  Slide,
-  Collapse,
   Paper,
   Stack,
   Dialog,
   DialogContent,
-  Divider,
   Backdrop,
   GlobalStyles,
 } from '@mui/material';
@@ -157,6 +152,42 @@ const schema = yup.object({
     .max(2000, 'Maximum 2000 caractères'),
 });
 
+// ==================== COMPOSANT DE TRANSITION SIMPLIFIÉ ====================
+const StepTransition = ({ children, step, activeStep }) => {
+  const [shouldRender, setShouldRender] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+
+  useEffect(() => {
+    if (step === activeStep) {
+      setIsExiting(false);
+      setShouldRender(true);
+    } else if (shouldRender) {
+      setIsExiting(true);
+      const timer = setTimeout(() => {
+        setShouldRender(false);
+        setIsExiting(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [step, activeStep, shouldRender]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <Box
+      sx={{
+        opacity: isExiting ? 0 : 1,
+        transform: isExiting ? 'translateX(-20px)' : 'translateX(0)',
+        transition: 'opacity 150ms ease-out, transform 150ms ease-out',
+        position: 'relative',
+        width: '100%',
+      }}
+    >
+      {children}
+    </Box>
+  );
+};
+
 // ==================== COMPOSANT PRINCIPAL ====================
 const Postuler = () => {
   const navigate = useNavigate();
@@ -172,7 +203,6 @@ const Postuler = () => {
     setValue,
     trigger,
     clearErrors,
-    reset,
     getValues,
     formState: { errors: formErrors, isDirty, isValid },
   } = useForm({
@@ -202,7 +232,6 @@ const Postuler = () => {
   const watchedEditionId = watch('edition_id');
   const watchedCategoryId = watch('category_id');
   const descriptionValue = watch('description_talent') || '';
-  const videoUrlValue = watch('video_url');
 
   // ==================== STATES ====================
   const [activeStep, setActiveStep] = useState(0);
@@ -214,7 +243,6 @@ const Postuler = () => {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [hasDomError, setHasDomError] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(true);
   const [isTransitioning, setIsTransitioning] = useState(false);
   
@@ -223,66 +251,29 @@ const Postuler = () => {
   const formRef = useRef(null);
   const stepContentRef = useRef(null);
   const animationTimeoutRef = useRef(null);
+  const photoPreviewRef = useRef('');
+  const videoPreviewRef = useRef('');
 
-  // ==================== GESTION DES ERREURS GLOBALES ====================
+  // ==================== GESTION DES PRÉVISUALISATIONS ====================
   useEffect(() => {
-    // Intercepter les erreurs non capturées
-    const handleGlobalError = (event) => {
-      if (event.error && event.error.message && event.error.message.includes('insertBefore')) {
-        event.preventDefault();
-        event.stopPropagation();
-        console.warn('DOM manipulation error caught:', event.error);
-        setHasDomError(true);
-        
-        // Réinitialiser les états d'animation
-        setIsTransitioning(false);
-        if (animationTimeoutRef.current) {
-          clearTimeout(animationTimeoutRef.current);
-        }
-        
-        // Réinitialiser les previews de fichiers
-        if (photoPreview) {
-          URL.revokeObjectURL(photoPreview);
-          setPhotoPreview('');
-        }
-        if (videoPreview) {
-          URL.revokeObjectURL(videoPreview);
-          setVideoPreview('');
-        }
-        
-        toast.error('Une erreur d\'affichage est survenue. Veuillez réessayer.');
-        
-        return false;
-      }
-    };
-
-    const handleUnhandledRejection = (event) => {
-      if (event.reason && event.reason.message && event.reason.message.includes('insertBefore')) {
-        event.preventDefault();
-        console.warn('Unhandled promise rejection:', event.reason);
-        setHasDomError(true);
-        return false;
-      }
-    };
-
-    window.addEventListener('error', handleGlobalError);
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
+    photoPreviewRef.current = photoPreview;
+    videoPreviewRef.current = videoPreview;
+    
     return () => {
-      window.removeEventListener('error', handleGlobalError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-      
-      // Nettoyage des timeouts
-      if (animationTimeoutRef.current) {
-        clearTimeout(animationTimeoutRef.current);
+      // Nettoyage sécurisé
+      if (photoPreviewRef.current) {
+        try {
+          URL.revokeObjectURL(photoPreviewRef.current);
+        } catch (e) {
+          console.warn('Erreur lors du nettoyage photo:', e);
+        }
       }
-      
-      // Nettoyage des URLs d'objets
-      if (photoPreview) {
-        URL.revokeObjectURL(photoPreview);
-      }
-      if (videoPreview) {
-        URL.revokeObjectURL(videoPreview);
+      if (videoPreviewRef.current) {
+        try {
+          URL.revokeObjectURL(videoPreviewRef.current);
+        } catch (e) {
+          console.warn('Erreur lors du nettoyage vidéo:', e);
+        }
       }
     };
   }, [photoPreview, videoPreview]);
@@ -298,33 +289,29 @@ const Postuler = () => {
     queryKey: ['editions-ouvertes'],
     queryFn: async () => {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        
         const response = await axiosInstance.get('/candidat/editions-ouvertes', {
-          timeout: 15000,
-          signal: AbortSignal.timeout(15000)
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         const data = response.data?.data || response.data || [];
         return Array.isArray(data) ? data : [];
       } catch (error) {
-        console.error('Erreur chargement éditions:', error);
-        if (error.code === 'ECONNABORTED' || error.name === 'TimeoutError') {
+        if (error.name === 'AbortError') {
           throw new Error('Délai d\'attente dépassé. Vérifiez votre connexion internet.');
         }
         throw new Error('Impossible de charger les éditions. Veuillez réessayer.');
       }
     },
-    retry: 2,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+    retry: 1,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
-    onSuccess: () => {
-      setIsInitialLoad(false);
-      setHasDomError(false);
-    },
-    onError: () => {
-      setIsInitialLoad(false);
-      setHasDomError(true);
-    },
+    onSuccess: () => setIsInitialLoad(false),
+    onError: () => setIsInitialLoad(false),
   });
 
   // Transformer les données d'éditions
@@ -348,36 +335,36 @@ const Postuler = () => {
     isLoading: categoriesLoading,
     error: categoriesError,
     isFetching: categoriesFetching,
-    refetch: refetchCategories,
   } = useQuery({
     queryKey: ['categories', watchedEditionId],
     queryFn: async () => {
       if (!watchedEditionId) return [];
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
         const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`, {
-          timeout: 10000,
-          signal: AbortSignal.timeout(10000)
+          signal: controller.signal
         });
-        console.log('Catégories API response:', response.data);
+        
+        clearTimeout(timeoutId);
         return response.data?.data || response.data || [];
       } catch (error) {
-        console.error('Erreur chargement catégories:', error);
-        if (error.code === 'ECONNABORTED' || error.name === 'TimeoutError') {
-          throw new Error('Délai d\'attente dépassé lors du chargement des catégories.');
+        if (error.name === 'AbortError') {
+          throw new Error('Délai d\'attente dépassé.');
         }
-        throw new Error('Impossible de charger les catégories pour cette édition.');
+        return [];
       }
     },
-    enabled: !!watchedEditionId && !hasDomError,
-    retry: 2,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
+    enabled: !!watchedEditionId,
+    retry: 1,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 
   // Transformer les données de catégories
   const categories = useMemo(() => {
-    if (categoriesLoading || hasDomError) return [];
+    if (categoriesLoading) return [];
     return Array.isArray(categoriesData) ? categoriesData.map(category => ({
       id: category.id || category.value || category._id,
       nom: category.nom || category.name || 'Catégorie sans nom',
@@ -386,7 +373,7 @@ const Postuler = () => {
       ordre_affichage: category.ordre_affichage || category.display_order || 0,
       active: category.active !== undefined ? category.active : true,
     })) : [];
-  }, [categoriesData, categoriesLoading, hasDomError]);
+  }, [categoriesData, categoriesLoading]);
 
   // ==================== MUTATION OPTIMISÉE ====================
   const mutation = useMutation({
@@ -395,11 +382,14 @@ const Postuler = () => {
       setErrors({});
       
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        
         const response = await axiosInstance.post('/candidat/postuler', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
-          timeout: 60000,
+          signal: controller.signal,
           onUploadProgress: (progressEvent) => {
             if (progressEvent.total) {
               const percentCompleted = Math.round(
@@ -409,14 +399,12 @@ const Postuler = () => {
             }
           },
         });
+        
+        clearTimeout(timeoutId);
         return response.data;
       } catch (error) {
-        // Gestion spécifique des erreurs
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('La soumission a pris trop de temps. Veuillez vérifier votre connexion et réessayer.');
-        }
-        if (error.message === 'Network Error') {
-          throw new Error('Problème de connexion réseau. Veuillez vérifier votre connexion internet.');
+        if (error.name === 'AbortError') {
+          throw new Error('La soumission a pris trop de temps.');
         }
         throw error;
       }
@@ -424,9 +412,8 @@ const Postuler = () => {
     onSuccess: (data) => {
       toast.success('🎉 Candidature soumise avec succès !');
       
-      // Nettoyage des URLs d'objets avant navigation
-      if (photoPreview) URL.revokeObjectURL(photoPreview);
-      if (videoPreview) URL.revokeObjectURL(videoPreview);
+      // Nettoyage sécurisé
+      cleanupResources();
       
       setTimeout(() => {
         navigate('/candidat/mes-candidatures', {
@@ -440,21 +427,15 @@ const Postuler = () => {
       }, 100);
     },
     onError: (error) => {
-      console.error('Mutation error details:', error);
       const errorData = error.response?.data;
-      let errorMessage = 'Erreur lors de la soumission de la candidature';
+      let errorMessage = 'Erreur lors de la soumission';
       
       if (error.response?.status === 422 && errorData?.errors) {
         setErrors(errorData.errors);
         errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else if (error.response?.status === 413) {
-        errorMessage = 'Fichiers trop volumineux. La photo ne doit pas dépasser 5MB et la vidéo 100MB.';
-      } else if (error.response?.status === 429) {
-        errorMessage = 'Trop de tentatives. Veuillez patienter quelques instants avant de réessayer.';
-      } else if (error.response?.status === 401) {
-        errorMessage = 'Session expirée. Veuillez vous reconnecter.';
-        setTimeout(() => navigate('/login'), 2000);
+        errorMessage = 'Fichiers trop volumineux. Max 5MB photo, 100MB vidéo.';
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -467,7 +448,26 @@ const Postuler = () => {
     },
   });
 
-  // ==================== FONCTIONS ====================
+  // ==================== FONCTIONS UTILITAIRES ====================
+  const cleanupResources = useCallback(() => {
+    if (photoPreviewRef.current) {
+      try {
+        URL.revokeObjectURL(photoPreviewRef.current);
+        photoPreviewRef.current = '';
+      } catch (e) {
+        // Ignorer les erreurs de nettoyage
+      }
+    }
+    if (videoPreviewRef.current) {
+      try {
+        URL.revokeObjectURL(videoPreviewRef.current);
+        videoPreviewRef.current = '';
+      } catch (e) {
+        // Ignorer les erreurs de nettoyage
+      }
+    }
+  }, []);
+
   const steps = useMemo(() => [
     { 
       label: 'Informations personnelles', 
@@ -500,44 +500,13 @@ const Postuler = () => {
   }, [categories, watchedCategoryId]);
 
   const getStepError = useCallback(() => {
-    if (hasDomError) return true;
     const currentStepFields = steps[activeStep]?.fields || [];
     return currentStepFields.some(field => formErrors[field]);
-  }, [activeStep, steps, formErrors, hasDomError]);
-
-  // ==================== EFFECTS ====================
-  useEffect(() => {
-    // Pré-remplir l'édition depuis l'URL
-    const params = new URLSearchParams(location.search);
-    const editionId = params.get('edition');
-    if (editionId && editions.length > 0 && !watchedEditionId) {
-      const editionIdNum = parseInt(editionId);
-      const edition = editions.find(e => e.id === editionIdNum);
-      if (edition) {
-        setValue('edition_id', edition.id, { shouldValidate: true });
-      }
-    }
-  }, [location.search, editions, watchedEditionId, setValue]);
-
-  // Reset category quand l'édition change
-  useEffect(() => {
-    if (watchedEditionId && getValues('category_id')) {
-      setValue('category_id', '', { shouldValidate: false });
-    }
-  }, [watchedEditionId, setValue, getValues]);
-
-  // Gestion des transitions d'étapes
-  useEffect(() => {
-    return () => {
-      // Nettoyage à la destruction du composant
-      if (photoPreview) URL.revokeObjectURL(photoPreview);
-      if (videoPreview) URL.revokeObjectURL(videoPreview);
-    };
-  }, []);
+  }, [activeStep, steps, formErrors]);
 
   // ==================== HANDLERS SÉCURISÉS ====================
   const handleNext = useCallback(async () => {
-    if (isTransitioning || hasDomError) return;
+    if (isTransitioning) return;
     
     setIsTransitioning(true);
     
@@ -550,57 +519,53 @@ const Postuler = () => {
 
       const isValid = await trigger(currentStepFields);
       if (isValid) {
+        // Petit délai pour éviter les conflits de rendu
+        await new Promise(resolve => setTimeout(resolve, 50));
         setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
         clearErrors();
         
-        // Attendre le prochain tick pour éviter les conflits de rendu
-        setTimeout(() => {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-          setIsTransitioning(false);
-        }, 100);
-      } else {
-        setIsTransitioning(false);
+        // Scroll en douceur
+        requestAnimationFrame(() => {
+          stepContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        });
       }
     } catch (error) {
       console.error('Error in handleNext:', error);
+      toast.error('Erreur lors du changement d\'étape');
+    } finally {
       setIsTransitioning(false);
-      setHasDomError(true);
-      toast.error('Erreur lors du changement d\'étape. Veuillez réessayer.');
     }
-  }, [activeStep, steps, trigger, clearErrors, isTransitioning, hasDomError]);
+  }, [activeStep, steps, trigger, clearErrors, isTransitioning]);
 
   const handleBack = useCallback(() => {
-    if (isTransitioning || hasDomError) return;
+    if (isTransitioning || activeStep === 0) return;
     
     setIsTransitioning(true);
     try {
       setActiveStep(prev => Math.max(prev - 1, 0));
       
-      setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        setIsTransitioning(false);
-      }, 100);
+      requestAnimationFrame(() => {
+        stepContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      });
     } catch (error) {
       console.error('Error in handleBack:', error);
+    } finally {
       setIsTransitioning(false);
-      setHasDomError(true);
     }
-  }, [isTransitioning, hasDomError]);
+  }, [activeStep, isTransitioning]);
 
   const handleClose = useCallback(() => {
     if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
       return;
     }
     
-    // Nettoyage avant fermeture
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    if (videoPreview) URL.revokeObjectURL(videoPreview);
-    
+    cleanupResources();
     setIsDialogOpen(false);
+    
     setTimeout(() => {
       navigate('/', { replace: true });
     }, 300);
-  }, [isDirty, navigate, photoPreview, videoPreview]);
+  }, [isDirty, navigate, cleanupResources]);
 
   const handlePhotoUpload = useCallback((event) => {
     try {
@@ -618,36 +583,22 @@ const Postuler = () => {
       }
 
       // Nettoyer l'ancienne preview
-      if (photoPreview) {
-        URL.revokeObjectURL(photoPreview);
-      }
+      cleanupResources();
 
       setPhotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        try {
-          setPhotoPreview(reader.result);
-        } catch (error) {
-          console.error('Error setting photo preview:', error);
-          toast.error('Erreur lors du chargement de la photo');
-        }
-      };
-      reader.onerror = () => {
-        toast.error('Erreur lors de la lecture du fichier');
-      };
-      reader.readAsDataURL(file);
+      const objectUrl = URL.createObjectURL(file);
+      setPhotoPreview(objectUrl);
     } catch (error) {
       console.error('Error in handlePhotoUpload:', error);
       toast.error('Erreur lors de l\'upload de la photo');
     }
-  }, [photoPreview]);
+  }, [cleanupResources]);
 
   const handleVideoUpload = useCallback((event) => {
     try {
       const file = event.target.files?.[0];
       if (!file) return;
 
-      // Validation
       if (file.size > 100 * 1024 * 1024) {
         toast.error('La vidéo ne doit pas dépasser 100MB');
         return;
@@ -657,101 +608,54 @@ const Postuler = () => {
         return;
       }
 
-      // Nettoyer l'ancienne preview
-      if (videoPreview) {
-        URL.revokeObjectURL(videoPreview);
-      }
-
       setVideoFile(file);
       setValue('videoFile', file, { shouldValidate: true });
       
-      // Créer preview URL avec gestion d'erreur
-      try {
-        const videoURL = URL.createObjectURL(file);
-        setVideoPreview(videoURL);
-      } catch (error) {
-        console.error('Error creating video URL:', error);
-        toast.error('Erreur lors de la prévisualisation de la vidéo');
-      }
+      // Créer preview
+      const objectUrl = URL.createObjectURL(file);
+      setVideoPreview(objectUrl);
     } catch (error) {
       console.error('Error in handleVideoUpload:', error);
       toast.error('Erreur lors de l\'upload de la vidéo');
     }
-  }, [videoPreview, setValue]);
+  }, [setValue]);
 
-  const removePhoto = useCallback((e) => {
-    e?.stopPropagation();
-    e?.preventDefault();
-    
-    try {
-      if (photoPreview) {
-        URL.revokeObjectURL(photoPreview);
-      }
-      setPhotoFile(null);
-      setPhotoPreview('');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (error) {
-      console.error('Error removing photo:', error);
-    }
-  }, [photoPreview]);
-
-  const removeVideo = useCallback((e) => {
-    e?.stopPropagation();
-    e?.preventDefault();
-    
-    try {
-      if (videoPreview) {
-        URL.revokeObjectURL(videoPreview);
-      }
-      setVideoFile(null);
-      setVideoPreview('');
-      setValue('video_url', '', { shouldValidate: false });
-      setValue('videoFile', null, { shouldValidate: true });
-      if (videoInputRef.current) {
-        videoInputRef.current.value = '';
-      }
-    } catch (error) {
-      console.error('Error removing video:', error);
-    }
-  }, [videoPreview, setValue]);
-
-  const handleRetry = useCallback(() => {
-    setHasDomError(false);
-    setIsInitialLoad(true);
-    
-    // Réinitialiser les états
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    if (videoPreview) URL.revokeObjectURL(videoPreview);
-    
+  const removePhoto = useCallback(() => {
+    cleanupResources();
     setPhotoFile(null);
     setPhotoPreview('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [cleanupResources]);
+
+  const removeVideo = useCallback(() => {
+    if (videoPreviewRef.current) {
+      try {
+        URL.revokeObjectURL(videoPreviewRef.current);
+      } catch (e) {
+        // Ignorer
+      }
+    }
     setVideoFile(null);
     setVideoPreview('');
-    setErrors({});
-    setUploadProgress(0);
-    setActiveStep(0);
-    
-    // Recharger les données
-    refetchEditions();
-    if (watchedEditionId) {
-      refetchCategories();
+    setValue('video_url', '', { shouldValidate: false });
+    setValue('videoFile', null, { shouldValidate: true });
+    if (videoInputRef.current) {
+      videoInputRef.current.value = '';
     }
-  }, [photoPreview, videoPreview, watchedEditionId, refetchEditions, refetchCategories]);
+  }, [setValue]);
 
   const onSubmit = useCallback(async (data) => {
-    if (isSubmitting || hasDomError) return;
+    if (isSubmitting) return;
     
     try {
-      // Validation finale
       const isValid = await trigger();
       if (!isValid) {
         toast.error('Veuillez corriger les erreurs avant de soumettre');
         return;
       }
 
-      // Validation photo requise
       if (!photoFile) {
         toast.error('La photo de profil est requise');
         return;
@@ -782,54 +686,16 @@ const Postuler = () => {
       mutation.mutate(formData);
     } catch (error) {
       console.error('Error in onSubmit:', error);
-      toast.error('Erreur lors de la préparation du formulaire');
+      toast.error('Erreur lors de la soumission');
     }
-  }, [photoFile, videoFile, trigger, mutation, isSubmitting, hasDomError]);
+  }, [photoFile, videoFile, trigger, mutation, isSubmitting]);
 
   // ==================== RENDER FUNCTIONS ====================
   const renderStepContent = () => {
-    // Si erreur DOM, afficher écran d'erreur
-    if (hasDomError) {
-      return (
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          minHeight: '400px',
-          textAlign: 'center',
-          p: 3
-        }}>
-          <ErrorIcon sx={{ fontSize: 64, color: 'error.main', mb: 3 }} />
-          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-            Erreur d'affichage
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
-            Une erreur est survenue lors du chargement du formulaire.
-          </Typography>
-          <Button
-            variant="contained"
-            onClick={handleRetry}
-            startIcon={<RefreshIcon />}
-            sx={{
-              background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
-              color: 'white',
-              fontWeight: 600,
-              borderRadius: 2,
-              px: 4,
-              py: 1.5
-            }}
-          >
-            Réessayer
-          </Button>
-        </Box>
-      );
-    }
-
     switch (activeStep) {
       case 0:
         return (
-          <Fade in={!isTransitioning} timeout={300} unmountOnExit>
+          <StepTransition step={0} activeStep={activeStep}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -852,10 +718,6 @@ const Postuler = () => {
                     border: '2px solid',
                     borderColor: photoPreview ? '#10B981' : 'divider',
                     transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                      boxShadow: 2,
-                    }
                   }}>
                     <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                       <Typography variant="subtitle2" sx={{ 
@@ -988,12 +850,6 @@ const Postuler = () => {
                                     {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
                                   </InputAdornment>
                                 ) : undefined,
-                                sx: {
-                                  borderRadius: 1,
-                                  '& input': {
-                                    py: isMobile ? 1.25 : 1.5
-                                  }
-                                }
                               }}
                             />
                           )}
@@ -1020,12 +876,6 @@ const Postuler = () => {
                               {...field}
                               displayEmpty
                               value={field.value || ''}
-                              sx={{ 
-                                borderRadius: 1,
-                                '& .MuiSelect-select': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }}
                             >
                               <MenuItem value="" disabled>
                                 Sélectionnez votre sexe
@@ -1047,12 +897,12 @@ const Postuler = () => {
                 </Grid>
               </Grid>
             </Box>
-          </Fade>
+          </StepTransition>
         );
 
       case 1:
         return (
-          <Zoom in={!isTransitioning} timeout={300} unmountOnExit>
+          <StepTransition step={1} activeStep={activeStep}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1090,12 +940,6 @@ const Postuler = () => {
                                 {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
                               </InputAdornment>
                             ) : undefined,
-                            sx: {
-                              borderRadius: 1,
-                              '& input': {
-                                py: isMobile ? 1.25 : 1.5
-                              }
-                            }
                           }}
                         />
                       )}
@@ -1121,12 +965,6 @@ const Postuler = () => {
                           {...field}
                           displayEmpty
                           value={field.value || ''}
-                          sx={{ 
-                            borderRadius: 1,
-                            '& .MuiSelect-select': {
-                              py: isMobile ? 1.25 : 1.5
-                            }
-                          }}
                         >
                           <MenuItem value="" disabled>
                             Sélectionnez votre année
@@ -1150,12 +988,12 @@ const Postuler = () => {
                 </Grid>
               </Grid>
             </Box>
-          </Zoom>
+          </StepTransition>
         );
 
       case 2:
         return (
-          <Slide direction="left" in={!isTransitioning} timeout={300} unmountOnExit>
+          <StepTransition step={2} activeStep={activeStep}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1192,10 +1030,6 @@ const Postuler = () => {
                     borderRadius: 2,
                     border: '2px solid',
                     borderColor: formErrors.edition_id ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
                   }}>
                     <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                       <Controller
@@ -1206,7 +1040,6 @@ const Postuler = () => {
                             <FormLabel sx={{ 
                               mb: 1,
                               fontWeight: 600,
-                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
                               color: 'text.primary'
                             }}>
                               Édition *
@@ -1215,13 +1048,7 @@ const Postuler = () => {
                               {...field}
                               displayEmpty
                               value={field.value || ''}
-                              disabled={editionsLoading || editionsFetching || hasDomError}
-                              sx={{ 
-                                borderRadius: 1,
-                                '& .MuiSelect-select': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }}
+                              disabled={editionsLoading || editionsFetching}
                             >
                               <MenuItem value="" disabled>
                                 {editionsLoading ? (
@@ -1291,10 +1118,6 @@ const Postuler = () => {
                       borderRadius: 2,
                       border: '2px solid',
                       borderColor: formErrors.category_id ? 'error.main' : 'divider',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        borderColor: '#D4AF37',
-                      }
                     }}>
                       <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                         <Controller
@@ -1304,12 +1127,11 @@ const Postuler = () => {
                             <FormControl 
                               fullWidth 
                               error={!!fieldState.error || !!errors.category_id}
-                              disabled={categoriesLoading || categoriesError || categoriesFetching || hasDomError}
+                              disabled={categoriesLoading || categoriesError || categoriesFetching}
                             >
                               <FormLabel sx={{ 
                                 mb: 1,
                                 fontWeight: 600,
-                                fontSize: isMobile ? '0.875rem' : '0.9375rem',
                                 color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
                               }}>
                                 Catégorie *
@@ -1318,13 +1140,7 @@ const Postuler = () => {
                                 {...field}
                                 displayEmpty
                                 value={field.value || ''}
-                                disabled={categoriesLoading || categoriesError || categoriesFetching || hasDomError}
-                                sx={{ 
-                                  borderRadius: 1,
-                                  '& .MuiSelect-select': {
-                                    py: isMobile ? 1.25 : 1.5
-                                  }
-                                }}
+                                disabled={categoriesLoading || categoriesError || categoriesFetching}
                               >
                                 <MenuItem value="" disabled>
                                   {categoriesLoading || categoriesFetching ? (
@@ -1382,11 +1198,6 @@ const Postuler = () => {
                       borderRadius: 2,
                       background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
                       border: '1px solid rgba(212, 175, 55, 0.3)',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: 2,
-                      },
-                      transition: 'all 0.3s ease'
                     }}>
                       <CardContent>
                         <Typography variant="subtitle2" sx={{ 
@@ -1454,12 +1265,12 @@ const Postuler = () => {
                 )}
               </Grid>
             </Box>
-          </Slide>
+          </StepTransition>
         );
 
       case 3:
         return (
-          <Collapse in={!isTransitioning} timeout={300} unmountOnExit>
+          <StepTransition step={3} activeStep={activeStep}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1479,19 +1290,13 @@ const Postuler = () => {
                   <Card sx={{ 
                     borderRadius: 2,
                     border: '2px solid',
-                    borderColor: videoPreview ? '#10B981' : 
-                              (formErrors.video_url || formErrors.videoFile) ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
+                    borderColor: formErrors.video_url || formErrors.videoFile ? 'error.main' : 'divider',
                   }}>
                     <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                       <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
                         <FormLabel sx={{ 
                           mb: 1,
                           fontWeight: 600,
-                          fontSize: isMobile ? '0.875rem' : '0.9375rem'
                         }}>
                           Vidéo de présentation *
                         </FormLabel>
@@ -1515,12 +1320,6 @@ const Postuler = () => {
                                     <VideoIcon sx={{ color: '#8B0000' }} />
                                   </InputAdornment>
                                 ),
-                                sx: {
-                                  borderRadius: 1,
-                                  '& input': {
-                                    py: isMobile ? 1.25 : 1.5
-                                  }
-                                }
                               }}
                             />
                           )}
@@ -1543,10 +1342,6 @@ const Postuler = () => {
                     borderRadius: 2,
                     border: '2px solid',
                     borderColor: formErrors.description_talent ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
                   }}>
                     <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                       <Controller
@@ -1588,14 +1383,6 @@ const Postuler = () => {
                               </Box>
                             }
                             placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
-                            InputProps={{
-                              sx: {
-                                borderRadius: 1,
-                                '& textarea': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }
-                            }}
                           />
                         )}
                       />
@@ -1612,7 +1399,7 @@ const Postuler = () => {
                       borderRadius: 2,
                     }}
                   >
-                    <Typography variant="body2" sx={{ fontSize: isMobile ? '0.875rem' : '1rem' }}>
+                    <Typography variant="body2">
                       <strong>Important :</strong> Votre candidature sera soumise pour validation. 
                       Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
                       Vérifiez bien toutes les informations avant de soumettre.
@@ -1621,7 +1408,7 @@ const Postuler = () => {
                 </Grid>
               </Grid>
             </Box>
-          </Collapse>
+          </StepTransition>
         );
 
       default:
@@ -1651,31 +1438,6 @@ const Postuler = () => {
 
   return (
     <>
-      {/* Styles globaux pour la sécurité */}
-      <GlobalStyles
-        styles={{
-          '*': {
-            boxSizing: 'border-box',
-          },
-          body: {
-            overflow: 'hidden',
-          },
-        }}
-      />
-      
-      {/* Backdrop pendant les transitions */}
-      <Backdrop
-        sx={{ 
-          color: '#fff', 
-          zIndex: theme.zIndex.drawer + 1,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)'
-        }}
-        open={isTransitioning}
-        invisible={!isMobile}
-      >
-        <CircularProgress color="inherit" />
-      </Backdrop>
-      
       <Dialog
         open={isDialogOpen}
         onClose={handleClose}
@@ -1689,16 +1451,6 @@ const Postuler = () => {
             borderRadius: isMobile ? 0 : 2,
             overflow: 'hidden',
             background: 'white',
-            position: 'relative',
-          }
-        }}
-        TransitionProps={{
-          timeout: 300,
-          unmountOnExit: true,
-          onExited: () => {
-            // Nettoyage après fermeture
-            if (photoPreview) URL.revokeObjectURL(photoPreview);
-            if (videoPreview) URL.revokeObjectURL(videoPreview);
           }
         }}
       >
@@ -1707,15 +1459,12 @@ const Postuler = () => {
           background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
           padding: isMobile ? '20px 16px' : '24px 32px',
           position: 'relative',
-          overflow: 'hidden'
         }}>
           <Box sx={{ 
             display: 'flex', 
             justifyContent: 'space-between',
             alignItems: 'flex-start',
             mb: 2,
-            position: 'relative',
-            zIndex: 1
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Box
@@ -1784,7 +1533,6 @@ const Postuler = () => {
                 '&:hover': {
                   backgroundColor: 'rgba(255, 255, 255, 0.3)',
                 },
-                transition: 'all 0.2s ease',
               }}
             >
               <CloseIcon fontSize={isMobile ? "small" : "medium"} />
@@ -1794,20 +1542,20 @@ const Postuler = () => {
           {/* Progress Bar */}
           <LinearProgress 
             variant="determinate" 
-            value={hasDomError ? 100 : ((activeStep + 1) / steps.length) * 100}
+            value={((activeStep + 1) / steps.length) * 100}
             sx={{ 
               height: 4, 
               borderRadius: 2,
               background: 'rgba(255, 255, 255, 0.2)',
               '& .MuiLinearProgress-bar': {
-                background: hasDomError ? '#ef4444' : 'linear-gradient(90deg, #FFD700, #D4AF37)',
+                background: 'linear-gradient(90deg, #FFD700, #D4AF37)',
                 borderRadius: 2,
               }
             }}
           />
 
           {/* Stepper */}
-          {!isMobile && !hasDomError && (
+          {!isMobile && (
             <Stepper 
               activeStep={activeStep} 
               sx={{ 
@@ -1849,22 +1597,24 @@ const Postuler = () => {
             flex: 1,
             overflow: 'auto',
             p: isMobile ? 2 : 3,
-            '&::-webkit-scrollbar': {
-              width: '8px',
-            },
-            '&::-webkit-scrollbar-track': {
-              background: '#f1f1f1',
-              borderRadius: '4px',
-            },
-            '&::-webkit-scrollbar-thumb': {
-              background: '#D4AF37',
-              borderRadius: '4px',
-              '&:hover': {
-                background: '#c19b2e',
-              }
-            }
+            position: 'relative',
+            minHeight: '400px',
           }}
         >
+          {/* Backdrop pendant les transitions */}
+          {isTransitioning && (
+            <Backdrop
+              open={isTransitioning}
+              sx={{
+                position: 'absolute',
+                zIndex: 1,
+                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+              }}
+            >
+              <CircularProgress size={40} sx={{ color: '#8B0000' }} />
+            </Backdrop>
+          )}
+
           {/* Progress d'upload */}
           {isSubmitting && uploadProgress > 0 && (
             <Box sx={{ mb: 3 }}>
@@ -1917,137 +1667,130 @@ const Postuler = () => {
             {renderStepContent()}
 
             {/* Navigation buttons */}
-            {!hasDomError && (
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              mt: 4,
+              pt: 3,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+              gap: isMobile ? 1 : 2,
+              flexWrap: 'wrap'
+            }}>
+              <Button
+                onClick={handleBack}
+                disabled={activeStep === 0 || isSubmitting || isTransitioning}
+                startIcon={<ArrowBackIcon />}
+                variant="outlined"
+                sx={{
+                  color: '#8B0000',
+                  borderColor: '#8B0000',
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  px: isMobile ? 2 : 3,
+                  py: isMobile ? 0.75 : 1,
+                  minWidth: isMobile ? '100px' : '120px',
+                  '&:hover': {
+                    backgroundColor: 'rgba(139, 0, 0, 0.04)',
+                    borderColor: '#7a0000',
+                  },
+                  '&.Mui-disabled': {
+                    borderColor: '#e5e7eb',
+                    color: '#9ca3af',
+                  },
+                }}
+              >
+                Retour
+              </Button>
+              
               <Box sx={{ 
                 display: 'flex', 
-                justifyContent: 'space-between', 
-                mt: 4,
-                pt: 3,
-                borderTop: '1px solid',
-                borderColor: 'divider',
                 gap: isMobile ? 1 : 2,
-                flexWrap: 'wrap'
+                flex: 1,
+                justifyContent: 'flex-end'
               }}>
-                <Button
-                  onClick={handleBack}
-                  disabled={activeStep === 0 || isSubmitting || isTransitioning}
-                  startIcon={<ArrowBackIcon />}
-                  variant="outlined"
-                  sx={{
-                    color: '#8B0000',
-                    borderColor: '#8B0000',
-                    fontWeight: 600,
-                    borderRadius: 2,
-                    px: isMobile ? 2 : 3,
-                    py: isMobile ? 0.75 : 1,
-                    minWidth: isMobile ? '100px' : '120px',
-                    '&:hover': {
-                      backgroundColor: 'rgba(139, 0, 0, 0.04)',
-                      borderColor: '#7a0000',
-                    },
-                    '&.Mui-disabled': {
-                      borderColor: '#e5e7eb',
-                      color: '#9ca3af',
-                    },
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  Retour
-                </Button>
-                
-                <Box sx={{ 
-                  display: 'flex', 
-                  gap: isMobile ? 1 : 2,
-                  flex: 1,
-                  justifyContent: 'flex-end'
-                }}>
-                  {activeStep === steps.length - 1 ? (
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      disabled={isSubmitting || getStepError() || isTransitioning || !photoFile}
-                      startIcon={isSubmitting ? 
-                        <CircularProgress size={20} color="inherit" /> : 
-                        <CloudDoneIcon />
-                      }
-                      sx={{
-                        background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
-                        color: 'white',
-                        fontWeight: 700,
-                        borderRadius: 2,
-                        px: isMobile ? 3 : 6,
-                        py: isMobile ? 0.75 : 1,
-                        minWidth: isMobile ? '140px' : '180px',
-                        '&:hover': {
-                          background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
-                          boxShadow: 2,
-                        },
-                        '&.Mui-disabled': {
-                          background: '#e5e7eb',
-                          color: '#9ca3af',
-                        },
-                        transition: 'all 0.3s ease',
-                      }}
-                    >
-                      {isSubmitting ? 'Soumission...' : 'Soumettre'}
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={handleNext}
-                      variant="contained"
-                      endIcon={<ArrowForwardIcon />}
-                      disabled={getStepError() || isTransitioning}
-                      sx={{
-                        background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
-                        color: 'black',
-                        fontWeight: 700,
-                        borderRadius: 2,
-                        px: isMobile ? 3 : 6,
-                        py: isMobile ? 0.75 : 1,
-                        minWidth: isMobile ? '120px' : '150px',
-                        '&:hover': {
-                          background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
-                          boxShadow: 2,
-                        },
-                        '&.Mui-disabled': {
-                          background: '#e5e7eb',
-                          color: '#9ca3af',
-                        },
-                        transition: 'all 0.3s ease',
-                      }}
-                    >
-                      Continuer
-                    </Button>
-                  )}
-                </Box>
+                {activeStep === steps.length - 1 ? (
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={isSubmitting || getStepError() || isTransitioning || !photoFile}
+                    startIcon={isSubmitting ? 
+                      <CircularProgress size={20} color="inherit" /> : 
+                      <CloudDoneIcon />
+                    }
+                    sx={{
+                      background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
+                      color: 'white',
+                      fontWeight: 700,
+                      borderRadius: 2,
+                      px: isMobile ? 3 : 6,
+                      py: isMobile ? 0.75 : 1,
+                      minWidth: isMobile ? '140px' : '180px',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
+                        boxShadow: 2,
+                      },
+                      '&.Mui-disabled': {
+                        background: '#e5e7eb',
+                        color: '#9ca3af',
+                      },
+                    }}
+                  >
+                    {isSubmitting ? 'Soumission...' : 'Soumettre'}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleNext}
+                    variant="contained"
+                    endIcon={<ArrowForwardIcon />}
+                    disabled={getStepError() || isTransitioning}
+                    sx={{
+                      background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
+                      color: 'black',
+                      fontWeight: 700,
+                      borderRadius: 2,
+                      px: isMobile ? 3 : 6,
+                      py: isMobile ? 0.75 : 1,
+                      minWidth: isMobile ? '120px' : '150px',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
+                        boxShadow: 2,
+                      },
+                      '&.Mui-disabled': {
+                        background: '#e5e7eb',
+                        color: '#9ca3af',
+                      },
+                    }}
+                  >
+                    Continuer
+                  </Button>
+                )}
               </Box>
-            )}
+            </Box>
 
             {/* Indicateur de progression */}
-            {!hasDomError && (
-              <Box sx={{ 
-                mt: 3, 
-                textAlign: 'center' 
+            <Box sx={{ 
+              mt: 3, 
+              textAlign: 'center' 
+            }}>
+              <Typography variant="caption" sx={{ 
+                color: 'text.secondary',
+                fontSize: isMobile ? '0.75rem' : '0.875rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.5
               }}>
-                <Typography variant="caption" sx={{ 
-                  color: 'text.secondary',
-                  fontSize: isMobile ? '0.75rem' : '0.875rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 0.5
+                Étape {activeStep + 1} sur {steps.length}
+                <Box component="span" sx={{ 
+                  color: '#8B0000', 
+                  fontWeight: 600,
+                  ml: 0.5
                 }}>
-                  Étape {activeStep + 1} sur {steps.length}
-                  <Box component="span" sx={{ 
-                    color: '#8B0000', 
-                    fontWeight: 600,
-                    ml: 0.5
-                  }}>
-                    • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
-                  </Box>
-                </Typography>
-              </Box>
-            )}
+                  • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
+                </Box>
+              </Typography>
+            </Box>
           </Box>
         </DialogContent>
       </Dialog>
