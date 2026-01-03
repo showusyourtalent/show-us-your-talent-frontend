@@ -451,7 +451,7 @@ const CandidatsPage = () => {
     
     const interval = setInterval(() => {
       fetchCandidats();
-    }, 300000); // Refresh every 30 seconds
+    }, 3000000); // Refresh every 3000 seconds
     
     return () => clearInterval(interval);
   }, [fetchCandidats]);
@@ -792,15 +792,8 @@ const CandidatsPage = () => {
 
     const stats = [
       { 
-        value: data.statistiques?.total_candidats || 0, 
-        label: 'Candidats', 
-        icon: <PersonAddIcon />,
-        gradient: PALETTE.RED.GRADIENT,
-        delay: 0
-      },
-      { 
         value: data.statistiques?.total_votes || 0, 
-        label: 'Votes Totaux', 
+        label: 'Votes', 
         icon: <VoteIcon />,
         gradient: PALETTE.GOLD.GRADIENT,
         delay: 100
