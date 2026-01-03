@@ -17,9 +17,6 @@ import {
   Select,
   MenuItem,
   Typography,
-  Stepper,
-  Step,
-  StepLabel,
   LinearProgress,
   Alert,
   Grid,
@@ -27,17 +24,17 @@ import {
   IconButton,
   Avatar,
   CircularProgress,
-  Container,
   useMediaQuery,
   useTheme,
   alpha,
   Chip,
   Paper,
   Stack,
-  Dialog,
-  DialogContent,
-  Backdrop,
-  GlobalStyles,
+  Container,
+  Fade,
+  Grow,
+  Zoom,
+  Divider,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -49,8 +46,6 @@ import {
   VideoLibrary as VideoIcon,
   CameraAlt as CameraIcon,
   Close as CloseIcon,
-  ArrowBack as ArrowBackIcon,
-  ArrowForward as ArrowForwardIcon,
   Delete as DeleteIcon,
   EmojiEvents as TrophyIcon,
   Category as CategoryIcon,
@@ -62,7 +57,11 @@ import {
   LocationOn as LocationIcon,
   Language as LanguageIcon,
   CheckCircle as CheckIcon,
-  Refresh as RefreshIcon,
+  PhotoCamera as PhotoCameraIcon,
+  UploadFile as UploadFileIcon,
+  Description as DescriptionIcon,
+  Favorite as FavoriteIcon,
+  Stars as StarsIcon,
 } from '@mui/icons-material';
 
 // ==================== SCHEMA DE VALIDATION ====================
@@ -152,42 +151,6 @@ const schema = yup.object({
     .max(2000, 'Maximum 2000 caractères'),
 });
 
-// ==================== COMPOSANT DE TRANSITION SIMPLIFIÉ ====================
-const StepTransition = ({ children, step, activeStep }) => {
-  const [shouldRender, setShouldRender] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
-
-  useEffect(() => {
-    if (step === activeStep) {
-      setIsExiting(false);
-      setShouldRender(true);
-    } else if (shouldRender) {
-      setIsExiting(true);
-      const timer = setTimeout(() => {
-        setShouldRender(false);
-        setIsExiting(false);
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [step, activeStep, shouldRender]);
-
-  if (!shouldRender) return null;
-
-  return (
-    <Box
-      sx={{
-        opacity: isExiting ? 0 : 1,
-        transform: isExiting ? 'translateX(-20px)' : 'translateX(0)',
-        transition: 'opacity 150ms ease-out, transform 150ms ease-out',
-        position: 'relative',
-        width: '100%',
-      }}
-    >
-      {children}
-    </Box>
-  );
-};
-
 // ==================== COMPOSANT PRINCIPAL ====================
 const Postuler = () => {
   const navigate = useNavigate();
@@ -202,9 +165,7 @@ const Postuler = () => {
     watch,
     setValue,
     trigger,
-    clearErrors,
-    getValues,
-    formState: { errors: formErrors, isDirty, isValid },
+    formState: { errors: formErrors, isSubmitting: formIsSubmitting },
   } = useForm({
     resolver: yupResolver(schema),
     mode: 'onChange',
@@ -230,11 +191,9 @@ const Postuler = () => {
 
   // Watched values
   const watchedEditionId = watch('edition_id');
-  const watchedCategoryId = watch('category_id');
   const descriptionValue = watch('description_talent') || '';
 
   // ==================== STATES ====================
-  const [activeStep, setActiveStep] = useState(0);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [videoFile, setVideoFile] = useState(null);
@@ -242,79 +201,53 @@ const Postuler = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(true);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
-  const formRef = useRef(null);
-  const stepContentRef = useRef(null);
-  const animationTimeoutRef = useRef(null);
-  const photoPreviewRef = useRef('');
-  const videoPreviewRef = useRef('');
 
-  // ==================== GESTION DES PRÉVISUALISATIONS ====================
-  useEffect(() => {
-    photoPreviewRef.current = photoPreview;
-    videoPreviewRef.current = videoPreview;
-    
-    return () => {
-      // Nettoyage sécurisé
-      if (photoPreviewRef.current) {
-        try {
-          URL.revokeObjectURL(photoPreviewRef.current);
-        } catch (e) {
-          console.warn('Erreur lors du nettoyage photo:', e);
-        }
-      }
-      if (videoPreviewRef.current) {
-        try {
-          URL.revokeObjectURL(videoPreviewRef.current);
-        } catch (e) {
-          console.warn('Erreur lors du nettoyage vidéo:', e);
-        }
-      }
-    };
-  }, [photoPreview, videoPreview]);
-
-  // ==================== QUERIES OPTIMISÉES ====================
+  // ==================== QUERIES ====================
   const { 
     data: editionsData = [], 
     isLoading: editionsLoading,
     error: editionsError,
-    isFetching: editionsFetching,
-    refetch: refetchEditions,
   } = useQuery({
     queryKey: ['editions-ouvertes'],
     queryFn: async () => {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        const response = await axiosInstance.get('/candidat/editions-ouvertes', {
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+        const response = await axiosInstance.get('/candidat/editions-ouvertes');
         const data = response.data?.data || response.data || [];
         return Array.isArray(data) ? data : [];
       } catch (error) {
-        if (error.name === 'AbortError') {
-          throw new Error('Délai d\'attente dépassé. Vérifiez votre connexion internet.');
-        }
-        throw new Error('Impossible de charger les éditions. Veuillez réessayer.');
+        console.error('Erreur chargement éditions:', error);
+        return [];
       }
     },
     retry: 1,
     staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    onSuccess: () => setIsInitialLoad(false),
-    onError: () => setIsInitialLoad(false),
+    onSettled: () => setIsLoading(false),
   });
 
-  // Transformer les données d'éditions
+  const { 
+    data: categoriesData = [], 
+    isLoading: categoriesLoading,
+  } = useQuery({
+    queryKey: ['categories', watchedEditionId],
+    queryFn: async () => {
+      if (!watchedEditionId) return [];
+      try {
+        const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`);
+        return response.data?.data || response.data || [];
+      } catch (error) {
+        console.error('Erreur chargement catégories:', error);
+        return [];
+      }
+    },
+    enabled: !!watchedEditionId,
+    retry: 1,
+  });
+
+  // Transformer les données
   const editions = useMemo(() => {
     return Array.isArray(editionsData) ? editionsData.map(edition => ({
       id: edition.id || edition.value || edition._id,
@@ -323,97 +256,44 @@ const Postuler = () => {
       numero_edition: edition.numero_edition || edition.edition_number || 1,
       description: edition.description || '',
       date_fin_inscriptions: edition.date_fin_inscriptions || edition.registration_end_date,
-      date_debut_inscriptions: edition.date_debut_inscriptions || edition.registration_start_date,
-      statut: edition.statut || edition.status || 'active',
-      inscriptions_ouvertes: edition.inscriptions_ouvertes || edition.registrations_open || true,
     })) : [];
   }, [editionsData]);
 
-  // Query pour les catégories
-  const { 
-    data: categoriesData = [], 
-    isLoading: categoriesLoading,
-    error: categoriesError,
-    isFetching: categoriesFetching,
-  } = useQuery({
-    queryKey: ['categories', watchedEditionId],
-    queryFn: async () => {
-      if (!watchedEditionId) return [];
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`, {
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        return response.data?.data || response.data || [];
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          throw new Error('Délai d\'attente dépassé.');
-        }
-        return [];
-      }
-    },
-    enabled: !!watchedEditionId,
-    retry: 1,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-
-  // Transformer les données de catégories
   const categories = useMemo(() => {
     if (categoriesLoading) return [];
     return Array.isArray(categoriesData) ? categoriesData.map(category => ({
       id: category.id || category.value || category._id,
       nom: category.nom || category.name || 'Catégorie sans nom',
       description: category.description || '',
-      edition_id: category.edition_id || category.editionId,
-      ordre_affichage: category.ordre_affichage || category.display_order || 0,
-      active: category.active !== undefined ? category.active : true,
     })) : [];
   }, [categoriesData, categoriesLoading]);
 
-  // ==================== MUTATION OPTIMISÉE ====================
+  // ==================== MUTATION ====================
   const mutation = useMutation({
     mutationFn: async (formData) => {
       setIsSubmitting(true);
-      setErrors({});
-      
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
-        
-        const response = await axiosInstance.post('/candidat/postuler', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          signal: controller.signal,
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const percentCompleted = Math.round(
-                (progressEvent.loaded * 100) / progressEvent.total
-              );
-              setUploadProgress(percentCompleted);
-            }
-          },
-        });
-        
-        clearTimeout(timeoutId);
-        return response.data;
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          throw new Error('La soumission a pris trop de temps.');
-        }
-        throw error;
-      }
+      const response = await axiosInstance.post('/candidat/postuler', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 60000,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            setUploadProgress(percentCompleted);
+          }
+        },
+      });
+      return response.data;
     },
     onSuccess: (data) => {
       toast.success('🎉 Candidature soumise avec succès !');
       
-      // Nettoyage sécurisé
-      cleanupResources();
+      // Nettoyer les previews
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      if (videoPreview) URL.revokeObjectURL(videoPreview);
       
       setTimeout(() => {
         navigate('/candidat/mes-candidatures', {
@@ -427,20 +307,20 @@ const Postuler = () => {
       }, 100);
     },
     onError: (error) => {
+      console.error('Mutation error:', error);
       const errorData = error.response?.data;
-      let errorMessage = 'Erreur lors de la soumission';
+      const errorMessage = errorData?.message || 
+                          errorData?.error || 
+                          error.message || 
+                          'Erreur lors de la soumission';
       
       if (error.response?.status === 422 && errorData?.errors) {
         setErrors(errorData.errors);
-        errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
+        toast.error('Veuillez corriger les erreurs dans le formulaire');
         window.scrollTo({ top: 0, behavior: 'smooth' });
-      } else if (error.response?.status === 413) {
-        errorMessage = 'Fichiers trop volumineux. Max 5MB photo, 100MB vidéo.';
-      } else if (error.message) {
-        errorMessage = error.message;
+      } else {
+        toast.error(errorMessage);
       }
-      
-      toast.error(errorMessage, { duration: 5000 });
     },
     onSettled: () => {
       setIsSubmitting(false);
@@ -448,194 +328,85 @@ const Postuler = () => {
     },
   });
 
-  // ==================== FONCTIONS UTILITAIRES ====================
-  const cleanupResources = useCallback(() => {
-    if (photoPreviewRef.current) {
-      try {
-        URL.revokeObjectURL(photoPreviewRef.current);
-        photoPreviewRef.current = '';
-      } catch (e) {
-        // Ignorer les erreurs de nettoyage
-      }
-    }
-    if (videoPreviewRef.current) {
-      try {
-        URL.revokeObjectURL(videoPreviewRef.current);
-        videoPreviewRef.current = '';
-      } catch (e) {
-        // Ignorer les erreurs de nettoyage
-      }
-    }
-  }, []);
-
-  const steps = useMemo(() => [
-    { 
-      label: 'Informations personnelles', 
-      icon: <PersonIcon />, 
-      fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] 
-    },
-    { 
-      label: 'Informations académiques', 
-      icon: <SchoolIcon />, 
-      fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] 
-    },
-    { 
-      label: 'Choix de l\'édition', 
-      icon: <TrophyIcon />, 
-      fields: ['edition_id', 'category_id'] 
-    },
-    { 
-      label: 'Présentation du talent', 
-      icon: <VideoIcon />, 
-      fields: ['video_url', 'description_talent'] 
-    },
-  ], []);
-
-  const getCurrentEdition = useCallback(() => {
-    return editions?.find(e => e.id === watchedEditionId);
-  }, [editions, watchedEditionId]);
-
-  const getCurrentCategory = useCallback(() => {
-    return categories?.find(c => c.id === watchedCategoryId);
-  }, [categories, watchedCategoryId]);
-
-  const getStepError = useCallback(() => {
-    const currentStepFields = steps[activeStep]?.fields || [];
-    return currentStepFields.some(field => formErrors[field]);
-  }, [activeStep, steps, formErrors]);
-
-  // ==================== HANDLERS SÉCURISÉS ====================
-  const handleNext = useCallback(async () => {
-    if (isTransitioning) return;
-    
-    setIsTransitioning(true);
-    
-    try {
-      const currentStepFields = steps[activeStep]?.fields || [];
-      if (currentStepFields.length === 0) {
-        setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
-        return;
-      }
-
-      const isValid = await trigger(currentStepFields);
-      if (isValid) {
-        // Petit délai pour éviter les conflits de rendu
-        await new Promise(resolve => setTimeout(resolve, 50));
-        setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
-        clearErrors();
-        
-        // Scroll en douceur
-        requestAnimationFrame(() => {
-          stepContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-      }
-    } catch (error) {
-      console.error('Error in handleNext:', error);
-      toast.error('Erreur lors du changement d\'étape');
-    } finally {
-      setIsTransitioning(false);
-    }
-  }, [activeStep, steps, trigger, clearErrors, isTransitioning]);
-
-  const handleBack = useCallback(() => {
-    if (isTransitioning || activeStep === 0) return;
-    
-    setIsTransitioning(true);
-    try {
-      setActiveStep(prev => Math.max(prev - 1, 0));
-      
-      requestAnimationFrame(() => {
-        stepContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-    } catch (error) {
-      console.error('Error in handleBack:', error);
-    } finally {
-      setIsTransitioning(false);
-    }
-  }, [activeStep, isTransitioning]);
-
+  // ==================== HANDLERS ====================
   const handleClose = useCallback(() => {
-    if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
-      return;
+    if (formIsSubmitting) return;
+    
+    if (window.confirm('Voulez-vous vraiment quitter ?')) {
+      // Nettoyer les previews
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      if (videoPreview) URL.revokeObjectURL(videoPreview);
+      navigate('/');
     }
-    
-    cleanupResources();
-    setIsDialogOpen(false);
-    
-    setTimeout(() => {
-      navigate('/', { replace: true });
-    }, 300);
-  }, [isDirty, navigate, cleanupResources]);
+  }, [navigate, photoPreview, videoPreview, formIsSubmitting]);
 
   const handlePhotoUpload = useCallback((event) => {
-    try {
-      const file = event.target.files?.[0];
-      if (!file) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-      // Validation
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('La photo ne doit pas dépasser 5MB');
-        return;
-      }
-      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type)) {
-        toast.error('Format non supporté. Utilisez JPG, PNG ou WebP');
-        return;
-      }
-
-      // Nettoyer l'ancienne preview
-      cleanupResources();
-
-      setPhotoFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setPhotoPreview(objectUrl);
-    } catch (error) {
-      console.error('Error in handlePhotoUpload:', error);
-      toast.error('Erreur lors de l\'upload de la photo');
+    // Validation
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('La photo ne doit pas dépasser 5MB');
+      return;
     }
-  }, [cleanupResources]);
+    if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Format non supporté. Utilisez JPG, PNG ou WebP');
+      return;
+    }
+
+    // Nettoyer ancienne preview
+    if (photoPreview) {
+      URL.revokeObjectURL(photoPreview);
+    }
+
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPhotoPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }, [photoPreview]);
 
   const handleVideoUpload = useCallback((event) => {
-    try {
-      const file = event.target.files?.[0];
-      if (!file) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-      if (file.size > 100 * 1024 * 1024) {
-        toast.error('La vidéo ne doit pas dépasser 100MB');
-        return;
-      }
-      if (!['video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime'].includes(file.type)) {
-        toast.error('Format non supporté. Utilisez MP4, MOV, AVI ou WebM');
-        return;
-      }
-
-      setVideoFile(file);
-      setValue('videoFile', file, { shouldValidate: true });
-      
-      // Créer preview
-      const objectUrl = URL.createObjectURL(file);
-      setVideoPreview(objectUrl);
-    } catch (error) {
-      console.error('Error in handleVideoUpload:', error);
-      toast.error('Erreur lors de l\'upload de la vidéo');
+    // Validation
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error('La vidéo ne doit pas dépasser 100MB');
+      return;
     }
-  }, [setValue]);
+    if (!['video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime'].includes(file.type)) {
+      toast.error('Format non supporté. Utilisez MP4, MOV, AVI ou WebM');
+      return;
+    }
+
+    // Nettoyer ancienne preview
+    if (videoPreview) {
+      URL.revokeObjectURL(videoPreview);
+    }
+
+    setVideoFile(file);
+    setValue('videoFile', file, { shouldValidate: true });
+    
+    const videoURL = URL.createObjectURL(file);
+    setVideoPreview(videoURL);
+  }, [videoPreview, setValue]);
 
   const removePhoto = useCallback(() => {
-    cleanupResources();
+    if (photoPreview) {
+      URL.revokeObjectURL(photoPreview);
+    }
     setPhotoFile(null);
     setPhotoPreview('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [cleanupResources]);
+  }, [photoPreview]);
 
   const removeVideo = useCallback(() => {
-    if (videoPreviewRef.current) {
-      try {
-        URL.revokeObjectURL(videoPreviewRef.current);
-      } catch (e) {
-        // Ignorer
-      }
+    if (videoPreview) {
+      URL.revokeObjectURL(videoPreview);
     }
     setVideoFile(null);
     setVideoPreview('');
@@ -644,979 +415,152 @@ const Postuler = () => {
     if (videoInputRef.current) {
       videoInputRef.current.value = '';
     }
-  }, [setValue]);
+  }, [videoPreview, setValue]);
 
   const onSubmit = useCallback(async (data) => {
     if (isSubmitting) return;
     
-    try {
-      const isValid = await trigger();
-      if (!isValid) {
-        toast.error('Veuillez corriger les erreurs avant de soumettre');
-        return;
-      }
-
-      if (!photoFile) {
-        toast.error('La photo de profil est requise');
-        return;
-      }
-
-      setUploadProgress(0);
-      setErrors({});
-      
-      const formData = new FormData();
-      
-      // Ajouter tous les champs
-      Object.keys(data).forEach(key => {
-        if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
-          formData.append(key, String(data[key]));
-        }
-      });
-      
-      // Ajouter les fichiers
-      if (photoFile) {
-        formData.append('photo', photoFile);
-      }
-      if (videoFile) {
-        formData.append('video', videoFile);
-      } else if (data.video_url) {
-        formData.append('video_url', data.video_url);
-      }
-
-      mutation.mutate(formData);
-    } catch (error) {
-      console.error('Error in onSubmit:', error);
-      toast.error('Erreur lors de la soumission');
+    // Validation photo
+    if (!photoFile) {
+      toast.error('La photo de profil est requise');
+      return;
     }
-  }, [photoFile, videoFile, trigger, mutation, isSubmitting]);
 
-  // ==================== RENDER FUNCTIONS ====================
-  const renderStepContent = () => {
-    switch (activeStep) {
-      case 0:
-        return (
-          <StepTransition step={0} activeStep={activeStep}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <PersonIcon /> Informations personnelles
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Photo Upload */}
-                <Grid item xs={12} md={4}>
-                  <Card sx={{ 
-                    height: '100%',
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: photoPreview ? '#10B981' : 'divider',
-                    transition: 'all 0.3s ease',
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Typography variant="subtitle2" sx={{ 
-                        mb: 2, 
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        color: 'text.primary'
-                      }}>
-                        Photo de profil *
-                      </Typography>
-                      
-                      <Box
-                        sx={{
-                          border: '2px dashed',
-                          borderColor: photoPreview ? '#10B981' : alpha(theme.palette.primary.main, 0.3),
-                          borderRadius: 2,
-                          p: isMobile ? 2 : 3,
-                          position: 'relative',
-                          cursor: 'pointer',
-                          minHeight: isMobile ? 160 : 200,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            borderColor: '#D4AF37',
-                            backgroundColor: alpha('#D4AF37', 0.02),
-                          }
-                        }}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handlePhotoUpload}
-                          ref={fileInputRef}
-                          style={{ display: 'none' }}
-                        />
-                        
-                        {photoPreview ? (
-                          <>
-                            <Avatar
-                              src={photoPreview}
-                              sx={{
-                                width: isMobile ? 100 : 120,
-                                height: isMobile ? 100 : 120,
-                                mb: 2,
-                                border: '3px solid #D4AF37',
-                                boxShadow: 1,
-                              }}
-                            />
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              onClick={removePhoto}
-                              startIcon={<DeleteIcon />}
-                              sx={{ 
-                                borderRadius: 1,
-                                textTransform: 'none',
-                                fontWeight: 500
-                              }}
-                            >
-                              Changer
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <CameraIcon sx={{ 
-                              fontSize: isMobile ? 40 : 48, 
-                              color: alpha(theme.palette.text.secondary, 0.5),
-                              mb: 2 
-                            }} />
-                            <Typography variant="body2" sx={{ 
-                              color: 'text.secondary',
-                              textAlign: 'center',
-                              mb: 1,
-                              fontWeight: 500
-                            }}>
-                              Cliquez pour uploader
-                            </Typography>
-                            <Typography variant="caption" sx={{ 
-                              color: 'text.secondary',
-                              textAlign: 'center',
-                              display: 'block'
-                            }}>
-                              JPG, PNG, WebP (max 5MB)
-                            </Typography>
-                          </>
-                        )}
-                      </Box>
-                      
-                      {errors.photo && (
-                        <Typography color="error" variant="caption" sx={{ mt: 1, display: 'block' }}>
-                          <ErrorIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
-                          {errors.photo[0]}
-                        </Typography>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Form Fields */}
-                <Grid item xs={12} md={8}>
-                  <Grid container spacing={isMobile ? 2 : 3}>
-                    {[
-                      { name: 'nom', label: 'Nom *', icon: <PersonIcon />, gridSize: 6 },
-                      { name: 'prenoms', label: 'Prénoms *', icon: null, gridSize: 6 },
-                      { name: 'email', label: 'Email *', icon: <EmailIcon />, gridSize: 12 },
-                      { name: 'telephone', label: 'Téléphone *', icon: <PhoneIcon />, gridSize: 6 },
-                      { name: 'date_naissance', label: 'Date de naissance *', icon: <CalendarIcon />, gridSize: 6, type: 'date' },
-                    ].map((field) => (
-                      <Grid item xs={12} sm={field.gridSize} key={field.name}>
-                        <Controller
-                          name={field.name}
-                          control={control}
-                          render={({ field: controllerField, fieldState }) => (
-                            <TextField
-                              {...controllerField}
-                              fullWidth
-                              label={field.label}
-                              type={field.type || 'text'}
-                              InputLabelProps={field.type === 'date' ? { shrink: true } : {}}
-                              error={!!fieldState.error || !!errors[field.name]}
-                              helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
-                              InputProps={{
-                                startAdornment: field.icon ? (
-                                  <InputAdornment position="start">
-                                    {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
-                                  </InputAdornment>
-                                ) : undefined,
-                              }}
-                            />
-                          )}
-                        />
-                      </Grid>
-                    ))}
-
-                    {/* Sexe */}
-                    <Grid item xs={12}>
-                      <Controller
-                        name="sexe"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <FormControl fullWidth error={!!fieldState.error || !!errors.sexe}>
-                            <FormLabel sx={{ 
-                              mb: 1,
-                              fontWeight: 500,
-                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                              color: 'text.primary'
-                            }}>
-                              Sexe *
-                            </FormLabel>
-                            <Select
-                              {...field}
-                              displayEmpty
-                              value={field.value || ''}
-                            >
-                              <MenuItem value="" disabled>
-                                Sélectionnez votre sexe
-                              </MenuItem>
-                              <MenuItem value="M">Masculin</MenuItem>
-                              <MenuItem value="F">Féminin</MenuItem>
-                            </Select>
-                            {(fieldState.error || errors.sexe) && (
-                              <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                {fieldState.error?.message || errors.sexe?.[0]}
-                              </Typography>
-                            )}
-                          </FormControl>
-                        )}
-                      />
-                    </Grid>
-                  </Grid>
-                </Grid>
-              </Grid>
-            </Box>
-          </StepTransition>
-        );
-
-      case 1:
-        return (
-          <StepTransition step={1} activeStep={activeStep}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <SchoolIcon /> Informations académiques
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {[
-                  { name: 'origine', label: 'Ville/Région d\'origine *', icon: <LocationIcon />, gridSize: 6 },
-                  { name: 'ethnie', label: 'Ethnie (optionnel)', icon: <LanguageIcon />, gridSize: 6 },
-                  { name: 'universite', label: 'Université/École *', icon: <SchoolIcon />, gridSize: 12 },
-                  { name: 'filiere', label: 'Filière *', icon: null, gridSize: 8 },
-                ].map((field) => (
-                  <Grid item xs={12} sm={field.gridSize} key={field.name}>
-                    <Controller
-                      name={field.name}
-                      control={control}
-                      render={({ field: controllerField, fieldState }) => (
-                        <TextField
-                          {...controllerField}
-                          fullWidth
-                          label={field.label}
-                          error={!!fieldState.error || !!errors[field.name]}
-                          helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
-                          InputProps={{
-                            startAdornment: field.icon ? (
-                              <InputAdornment position="start">
-                                {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
-                              </InputAdornment>
-                            ) : undefined,
-                          }}
-                        />
-                      )}
-                    />
-                  </Grid>
-                ))}
-
-                {/* Année d'étude */}
-                <Grid item xs={12} sm={4}>
-                  <Controller
-                    name="annee_etude"
-                    control={control}
-                    render={({ field, fieldState }) => (
-                      <FormControl fullWidth error={!!fieldState.error || !!errors.annee_etude}>
-                        <FormLabel sx={{ 
-                          mb: 1,
-                          fontWeight: 500,
-                          fontSize: isMobile ? '0.875rem' : '0.9375rem'
-                        }}>
-                          Année d'étude *
-                        </FormLabel>
-                        <Select
-                          {...field}
-                          displayEmpty
-                          value={field.value || ''}
-                        >
-                          <MenuItem value="" disabled>
-                            Sélectionnez votre année
-                          </MenuItem>
-                          <MenuItem value="Licence 1">Licence 1</MenuItem>
-                          <MenuItem value="Licence 2">Licence 2</MenuItem>
-                          <MenuItem value="Licence 3">Licence 3</MenuItem>
-                          <MenuItem value="Master 1">Master 1</MenuItem>
-                          <MenuItem value="Master 2">Master 2</MenuItem>
-                          <MenuItem value="Doctorat">Doctorat</MenuItem>
-                        </Select>
-                        {(fieldState.error || errors.annee_etude) && (
-                          <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                            {fieldState.error?.message || errors.annee_etude?.[0]}
-                          </Typography>
-                        )}
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
-              </Grid>
-            </Box>
-          </StepTransition>
-        );
-
-      case 2:
-        return (
-          <StepTransition step={2} activeStep={activeStep}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <TrophyIcon /> Choix de l'édition et catégorie
-              </Typography>
-              
-              <Alert 
-                severity="info" 
-                icon={<InfoIcon />}
-                sx={{ 
-                  mb: 3, 
-                  borderRadius: 2,
-                }}
-              >
-                <Typography variant="body2">
-                  Sélectionnez l'édition à laquelle vous souhaitez participer et la catégorie correspondante.
-                  {getCurrentEdition()?.date_fin_inscriptions && (
-                    <> Les inscriptions se ferment le {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}.</>
-                  )}
-                </Typography>
-              </Alert>
-
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Édition */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.edition_id ? 'error.main' : 'divider',
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Controller
-                        name="edition_id"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <FormControl fullWidth error={!!fieldState.error || !!errors.edition_id}>
-                            <FormLabel sx={{ 
-                              mb: 1,
-                              fontWeight: 600,
-                              color: 'text.primary'
-                            }}>
-                              Édition *
-                            </FormLabel>
-                            <Select
-                              {...field}
-                              displayEmpty
-                              value={field.value || ''}
-                              disabled={editionsLoading || editionsFetching}
-                            >
-                              <MenuItem value="" disabled>
-                                {editionsLoading ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <CircularProgress size={16} />
-                                    Chargement des éditions...
-                                  </Box>
-                                ) : editionsError ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
-                                    <ErrorIcon fontSize="small" />
-                                    Erreur de chargement
-                                  </Box>
-                                ) : editions.length === 0 ? (
-                                  'Aucune édition ouverte aux inscriptions'
-                                ) : 'Sélectionnez une édition'}
-                              </MenuItem>
-                              {editions.map((edition) => (
-                                <MenuItem key={edition.id} value={edition.id}>
-                                  <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                                      {edition.nom}
-                                    </Typography>
-                                    <Box sx={{ 
-                                      display: 'flex', 
-                                      justifyContent: 'space-between',
-                                      mt: 0.5,
-                                      flexWrap: 'wrap',
-                                      gap: 1
-                                    }}>
-                                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                        {edition.annee} • {edition.numero_edition}ème édition
-                                      </Typography>
-                                      {edition.date_fin_inscriptions && (
-                                        <Typography variant="caption" sx={{ 
-                                          color: 'error.main',
-                                          fontWeight: 500,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: 0.5
-                                        }}>
-                                          <TimeIcon fontSize="inherit" />
-                                          Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
-                                        </Typography>
-                                      )}
-                                    </Box>
-                                  </Box>
-                                </MenuItem>
-                              ))}
-                            </Select>
-                            {(fieldState.error || errors.edition_id) && (
-                              <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                {fieldState.error?.message || errors.edition_id?.[0]}
-                              </Typography>
-                            )}
-                          </FormControl>
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Catégorie */}
-                {watchedEditionId && (
-                  <Grid item xs={12}>
-                    <Card sx={{ 
-                      borderRadius: 2,
-                      border: '2px solid',
-                      borderColor: formErrors.category_id ? 'error.main' : 'divider',
-                    }}>
-                      <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                        <Controller
-                          name="category_id"
-                          control={control}
-                          render={({ field, fieldState }) => (
-                            <FormControl 
-                              fullWidth 
-                              error={!!fieldState.error || !!errors.category_id}
-                              disabled={categoriesLoading || categoriesError || categoriesFetching}
-                            >
-                              <FormLabel sx={{ 
-                                mb: 1,
-                                fontWeight: 600,
-                                color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
-                              }}>
-                                Catégorie *
-                              </FormLabel>
-                              <Select
-                                {...field}
-                                displayEmpty
-                                value={field.value || ''}
-                                disabled={categoriesLoading || categoriesError || categoriesFetching}
-                              >
-                                <MenuItem value="" disabled>
-                                  {categoriesLoading || categoriesFetching ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                      <CircularProgress size={16} />
-                                      Chargement des catégories...
-                                    </Box>
-                                  ) : categoriesError ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
-                                      <ErrorIcon fontSize="small" />
-                                      Erreur de chargement
-                                    </Box>
-                                  ) : categories.length === 0 ? (
-                                    'Aucune catégorie disponible pour cette édition'
-                                  ) : 'Sélectionnez une catégorie'}
-                                </MenuItem>
-                                {categories.map((category) => (
-                                  <MenuItem key={category.id} value={category.id}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                                      <CategoryIcon sx={{ mr: 2, color: '#8B0000' }} />
-                                      <Box sx={{ flex: 1 }}>
-                                        <Typography variant="body1">{category.nom}</Typography>
-                                        {category.description && (
-                                          <Typography variant="caption" sx={{ 
-                                            color: 'text.secondary',
-                                            display: 'block',
-                                            mt: 0.5
-                                          }}>
-                                            {category.description}
-                                          </Typography>
-                                        )}
-                                      </Box>
-                                    </Box>
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                              {(fieldState.error || errors.category_id) && (
-                                <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                  <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                  {fieldState.error?.message || errors.category_id?.[0]}
-                                </Typography>
-                              )}
-                            </FormControl>
-                          )}
-                        />
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-
-                {/* Détails édition */}
-                {getCurrentEdition() && (
-                  <Grid item xs={12}>
-                    <Card sx={{ 
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
-                      border: '1px solid rgba(212, 175, 55, 0.3)',
-                    }}>
-                      <CardContent>
-                        <Typography variant="subtitle2" sx={{ 
-                          fontWeight: 600, 
-                          mb: 2, 
-                          color: '#8B0000',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1
-                        }}>
-                          <InfoIcon fontSize="small" />
-                          Détails de l'édition sélectionnée
-                        </Typography>
-                        
-                        <Grid container spacing={isMobile ? 1 : 2}>
-                          <Grid item xs={12} md={6}>
-                            <Stack spacing={1}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TrophyIcon sx={{ fontSize: 16, color: '#8B0000' }} />
-                                <Typography variant="body2">
-                                  <strong>Nom :</strong> {getCurrentEdition().nom}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Année :</strong> {getCurrentEdition().annee}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Numéro :</strong> {getCurrentEdition().numero_edition}ème édition
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Grid>
-                          
-                          <Grid item xs={12} md={6}>
-                            <Stack spacing={1}>
-                              {getCurrentEdition().date_fin_inscriptions && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <TimeIcon sx={{ fontSize: 16, color: 'error.main' }} />
-                                  <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 500 }}>
-                                    <strong>Clôture :</strong> {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}
-                                  </Typography>
-                                </Box>
-                              )}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Catégories :</strong> {categories?.length || 0} disponible(s)
-                                </Typography>
-                              </Box>
-                              {getCurrentCategory() && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 500 }}>
-                                    <strong>Votre choix :</strong> {getCurrentCategory()?.nom}
-                                  </Typography>
-                                </Box>
-                              )}
-                            </Stack>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-              </Grid>
-            </Box>
-          </StepTransition>
-        );
-
-      case 3:
-        return (
-          <StepTransition step={3} activeStep={activeStep}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <VideoIcon /> Présentation de votre talent
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Vidéo Upload */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.video_url || formErrors.videoFile ? 'error.main' : 'divider',
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
-                        <FormLabel sx={{ 
-                          mb: 1,
-                          fontWeight: 600,
-                        }}>
-                          Vidéo de présentation *
-                        </FormLabel>
-                        
-                        <Controller
-                          name="video_url"
-                          control={control}
-                          render={({ field, fieldState }) => (
-                            <TextField
-                              fullWidth
-                              label="URL de vôtre vidéo"
-                              {...field}
-                              error={!!fieldState.error || !!errors.video_url}
-                              helperText={
-                                (fieldState.error?.message || errors.video_url?.[0]) || 
-                                "Lien Tiktok YouTube, Vimeo, ou autre plateforme"
-                              }
-                              InputProps={{
-                                startAdornment: (
-                                  <InputAdornment position="start">
-                                    <VideoIcon sx={{ color: '#8B0000' }} />
-                                  </InputAdornment>
-                                ),
-                              }}
-                            />
-                          )}
-                        />
-                        
-                        {(formErrors.video_url || formErrors.videoFile) && (
-                          <Typography color="error" variant="caption" sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
-                            <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                            {formErrors.video_url?.message || formErrors.videoFile?.message || 'Vidéo requise'}
-                          </Typography>
-                        )}
-                      </FormControl>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Description */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.description_talent ? 'error.main' : 'divider',
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Controller
-                        name="description_talent"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <TextField
-                            {...field}
-                            fullWidth
-                            label="Description de votre talent *"
-                            multiline
-                            rows={isMobile ? 4 : 6}
-                            error={!!fieldState.error || !!errors.description_talent}
-                            helperText={
-                              <Box sx={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between',
-                                mt: 0.5,
-                                alignItems: 'center'
-                              }}>
-                                <span>
-                                  {fieldState.error?.message || errors.description_talent?.[0] || 
-                                   (field.value?.length < 100 
-                                     ? `Minimum ${100 - (field.value?.length || 0)} caractères restants` 
-                                     : 'Description suffisante')}
-                                </span>
-                                <Chip 
-                                  size="small"
-                                  label={`${field.value?.length || 0}/2000`}
-                                  color={
-                                    (field.value?.length || 0) > 2000 ? 'error' : 
-                                    (field.value?.length || 0) >= 100 ? 'success' : 'default'
-                                  }
-                                  sx={{ 
-                                    fontWeight: 500,
-                                    fontSize: '0.75rem'
-                                  }}
-                                />
-                              </Box>
-                            }
-                            placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
-                          />
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Avertissement */}
-                <Grid item xs={12}>
-                  <Alert 
-                    severity="warning" 
-                    icon={<WarningIcon />}
-                    sx={{ 
-                      borderRadius: 2,
-                    }}
-                  >
-                    <Typography variant="body2">
-                      <strong>Important :</strong> Votre candidature sera soumise pour validation. 
-                      Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
-                      Vérifiez bien toutes les informations avant de soumettre.
-                    </Typography>
-                  </Alert>
-                </Grid>
-              </Grid>
-            </Box>
-          </StepTransition>
-        );
-
-      default:
-        return null;
+    setUploadProgress(0);
+    setErrors({});
+    
+    const formData = new FormData();
+    
+    // Ajouter tous les champs
+    Object.keys(data).forEach(key => {
+      if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
+        formData.append(key, data[key]);
+      }
+    });
+    
+    // Ajouter les fichiers
+    if (photoFile) {
+      formData.append('photo', photoFile);
     }
-  };
+    if (videoFile) {
+      formData.append('video', videoFile);
+    } else if (data.video_url) {
+      formData.append('video_url', data.video_url);
+    }
+
+    mutation.mutate(formData);
+  }, [photoFile, videoFile, mutation, isSubmitting]);
 
   // ==================== RENDER ====================
-  // Loading state initial
-  if (isInitialLoad && editionsLoading) {
+  if (isLoading) {
     return (
-      <Dialog open={true} maxWidth="md" fullWidth fullScreen={isMobile}>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-            <CircularProgress size={60} sx={{ color: '#8B0000', mb: 3 }} />
-            <Typography variant="h6" sx={{ color: '#8B0000', fontWeight: 600 }}>
-              Chargement du formulaire...
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1 }}>
-              Préparation de votre expérience de candidature
-            </Typography>
-          </Box>
-        </DialogContent>
-      </Dialog>
+      <Box sx={{ 
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
+      }}>
+        <Box sx={{ textAlign: 'center', color: 'white', p: 3 }}>
+          <CircularProgress size={60} sx={{ color: 'white', mb: 3 }} />
+          <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
+            Chargement du formulaire...
+          </Typography>
+          <Typography variant="body2" sx={{ opacity: 0.8 }}>
+            Préparation de votre expérience de candidature
+          </Typography>
+        </Box>
+      </Box>
     );
   }
 
   return (
-    <>
-      <Dialog
-        open={isDialogOpen}
-        onClose={handleClose}
-        maxWidth="md"
-        fullWidth
-        fullScreen={isMobile}
-        PaperProps={{
-          sx: {
-            maxHeight: '100vh',
-            height: '100%',
-            borderRadius: isMobile ? 0 : 2,
-            overflow: 'hidden',
-            background: 'white',
-          }
-        }}
-      >
-        {/* Header */}
+    <Box sx={{ 
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+      py: { xs: 0, md: 4 },
+    }}>
+      {/* Header fixe pour mobile */}
+      <Paper sx={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 1000,
+        background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
+        color: 'white',
+        borderRadius: 0,
+        px: { xs: 2, md: 4 },
+        py: 2,
+        boxShadow: 3,
+      }}>
         <Box sx={{ 
-          background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
-          padding: isMobile ? '20px 16px' : '24px 32px',
-          position: 'relative',
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          maxWidth: '1200px',
+          mx: 'auto',
         }}>
-          <Box sx={{ 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            mb: 2,
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Box
-                sx={{
-                  width: isMobile ? 50 : 60,
-                  height: isMobile ? 50 : 60,
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #ffd700 0%, #D4AF37 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                  border: '3px solid white',
-                  boxShadow: 2,
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box sx={{
+              width: 50,
+              height: 50,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #ffd700 0%, #D4AF37 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              border: '2px solid white',
+            }}>
+              <img 
+                src="/logo.png" 
+                alt="Logo" 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
                 }}
-              >
-                <img 
-                  src="/logo.png" 
-                  alt="Logo" 
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                  }}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.style.display = 'none';
-                    const parent = e.target.parentElement;
-                    parent.innerHTML = `
-                      <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
-                        SYT
-                      </span>
-                    `;
-                  }}
-                />
-              </Box>
-              <Box>
-                <Typography
-                  variant={isMobile ? "h5" : "h4"}
-                  sx={{
-                    fontWeight: 800,
-                    color: 'white',
-                    lineHeight: 1.2
-                  }}
-                >
-                  Postuler à une édition
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    mt: 0.5
-                  }}
-                >
-                  Montrez votre talent au monde entier
-                </Typography>
-              </Box>
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.style.display = 'none';
+                  const parent = e.target.parentElement;
+                  parent.innerHTML = `
+                    <span style="color: white; font-size: 1rem; font-weight: bold;">
+                      SYT
+                    </span>
+                  `;
+                }}
+              />
             </Box>
-
-            <IconButton
-              onClick={handleClose}
-              size={isMobile ? "small" : "medium"}
-              sx={{
-                color: 'white',
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                '&:hover': {
-                  backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                },
-              }}
-            >
-              <CloseIcon fontSize={isMobile ? "small" : "medium"} />
-            </IconButton>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                Postuler à une édition
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.9, display: { xs: 'none', sm: 'block' } }}>
+                Montrez votre talent au monde entier
+              </Typography>
+            </Box>
           </Box>
-
-          {/* Progress Bar */}
-          <LinearProgress 
-            variant="determinate" 
-            value={((activeStep + 1) / steps.length) * 100}
-            sx={{ 
-              height: 4, 
-              borderRadius: 2,
-              background: 'rgba(255, 255, 255, 0.2)',
-              '& .MuiLinearProgress-bar': {
-                background: 'linear-gradient(90deg, #FFD700, #D4AF37)',
-                borderRadius: 2,
-              }
+          
+          <IconButton
+            onClick={handleClose}
+            sx={{
+              color: 'white',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              },
             }}
-          />
-
-          {/* Stepper */}
-          {!isMobile && (
-            <Stepper 
-              activeStep={activeStep} 
-              sx={{ 
-                mt: 3,
-                '& .MuiStepConnector-root': {
-                  top: 12
-                }
-              }}
-            >
-              {steps.map((step) => (
-                <Step key={step.label}>
-                  <StepLabel 
-                    sx={{
-                      '& .MuiStepLabel-label': {
-                        color: 'rgba(255, 255, 255, 0.9)',
-                        fontWeight: 500,
-                        '&.Mui-active': {
-                          color: 'white',
-                          fontWeight: 600
-                        },
-                        '&.Mui-completed': {
-                          color: '#D4AF37'
-                        }
-                      }
-                    }}
-                  >
-                    {step.label}
-                  </StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-          )}
+          >
+            <CloseIcon />
+          </IconButton>
         </Box>
+      </Paper>
 
-        {/* Content */}
-        <DialogContent 
-          ref={stepContentRef}
-          sx={{ 
-            flex: 1,
-            overflow: 'auto',
-            p: isMobile ? 2 : 3,
-            position: 'relative',
-            minHeight: '400px',
-          }}
-        >
-          {/* Backdrop pendant les transitions */}
-          {isTransitioning && (
-            <Backdrop
-              open={isTransitioning}
-              sx={{
-                position: 'absolute',
-                zIndex: 1,
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-              }}
-            >
-              <CircularProgress size={40} sx={{ color: '#8B0000' }} />
-            </Backdrop>
-          )}
-
-          {/* Progress d'upload */}
-          {isSubmitting && uploadProgress > 0 && (
+      {/* Main Content */}
+      <Container maxWidth="lg" sx={{ py: { xs: 2, md: 4 } }}>
+        {/* Progress d'upload */}
+        {isSubmitting && uploadProgress > 0 && (
+          <Grow in>
             <Box sx={{ mb: 3 }}>
               <LinearProgress 
                 variant="determinate" 
@@ -1635,15 +579,18 @@ const Postuler = () => {
                 Upload en cours... {uploadProgress}%
               </Typography>
             </Box>
-          )}
+          </Grow>
+        )}
 
-          {/* Erreurs globales */}
-          {Object.keys(errors).length > 0 && (
+        {/* Erreurs globales */}
+        {Object.keys(errors).length > 0 && (
+          <Fade in>
             <Alert 
               severity="error" 
               sx={{ 
                 mb: 3, 
-                borderRadius: 2
+                borderRadius: 2,
+                boxShadow: 1,
               }}
               onClose={() => setErrors({})}
             >
@@ -1660,141 +607,1019 @@ const Postuler = () => {
                 ))}
               </Box>
             </Alert>
-          )}
+          </Fade>
+        )}
 
-          {/* Contenu du formulaire */}
-          <Box ref={formRef} component="form" onSubmit={handleSubmit(onSubmit)}>
-            {renderStepContent()}
-
-            {/* Navigation buttons */}
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              mt: 4,
-              pt: 3,
-              borderTop: '1px solid',
-              borderColor: 'divider',
-              gap: isMobile ? 1 : 2,
-              flexWrap: 'wrap'
-            }}>
-              <Button
-                onClick={handleBack}
-                disabled={activeStep === 0 || isSubmitting || isTransitioning}
-                startIcon={<ArrowBackIcon />}
-                variant="outlined"
-                sx={{
-                  color: '#8B0000',
-                  borderColor: '#8B0000',
-                  fontWeight: 600,
-                  borderRadius: 2,
-                  px: isMobile ? 2 : 3,
-                  py: isMobile ? 0.75 : 1,
-                  minWidth: isMobile ? '100px' : '120px',
+        {/* Formulaire principal */}
+        <Box component="form" onSubmit={handleSubmit(onSubmit)}>
+          <Grid container spacing={3}>
+            {/* Carte Photo */}
+            <Grid item xs={12} md={4}>
+              <Zoom in style={{ transitionDelay: '100ms' }}>
+                <Card sx={{ 
+                  height: '100%',
+                  borderRadius: 3,
+                  border: '2px solid',
+                  borderColor: photoPreview ? '#10B981' : alpha('#8B0000', 0.1),
+                  boxShadow: 3,
+                  overflow: 'hidden',
                   '&:hover': {
-                    backgroundColor: 'rgba(139, 0, 0, 0.04)',
-                    borderColor: '#7a0000',
+                    boxShadow: 6,
+                    borderColor: '#D4AF37',
                   },
-                  '&.Mui-disabled': {
-                    borderColor: '#e5e7eb',
-                    color: '#9ca3af',
-                  },
-                }}
-              >
-                Retour
-              </Button>
-              
-              <Box sx={{ 
-                display: 'flex', 
-                gap: isMobile ? 1 : 2,
-                flex: 1,
-                justifyContent: 'flex-end'
-              }}>
-                {activeStep === steps.length - 1 ? (
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    disabled={isSubmitting || getStepError() || isTransitioning || !photoFile}
-                    startIcon={isSubmitting ? 
-                      <CircularProgress size={20} color="inherit" /> : 
-                      <CloudDoneIcon />
-                    }
-                    sx={{
-                      background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
-                      color: 'white',
-                      fontWeight: 700,
-                      borderRadius: 2,
-                      px: isMobile ? 3 : 6,
-                      py: isMobile ? 0.75 : 1,
-                      minWidth: isMobile ? '140px' : '180px',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
-                        boxShadow: 2,
-                      },
-                      '&.Mui-disabled': {
-                        background: '#e5e7eb',
-                        color: '#9ca3af',
-                      },
-                    }}
-                  >
-                    {isSubmitting ? 'Soumission...' : 'Soumettre'}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleNext}
-                    variant="contained"
-                    endIcon={<ArrowForwardIcon />}
-                    disabled={getStepError() || isTransitioning}
-                    sx={{
-                      background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
-                      color: 'black',
-                      fontWeight: 700,
-                      borderRadius: 2,
-                      px: isMobile ? 3 : 6,
-                      py: isMobile ? 0.75 : 1,
-                      minWidth: isMobile ? '120px' : '150px',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
-                        boxShadow: 2,
-                      },
-                      '&.Mui-disabled': {
-                        background: '#e5e7eb',
-                        color: '#9ca3af',
-                      },
-                    }}
-                  >
-                    Continuer
-                  </Button>
-                )}
-              </Box>
-            </Box>
-
-            {/* Indicateur de progression */}
-            <Box sx={{ 
-              mt: 3, 
-              textAlign: 'center' 
-            }}>
-              <Typography variant="caption" sx={{ 
-                color: 'text.secondary',
-                fontSize: isMobile ? '0.75rem' : '0.875rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 0.5
-              }}>
-                Étape {activeStep + 1} sur {steps.length}
-                <Box component="span" sx={{ 
-                  color: '#8B0000', 
-                  fontWeight: 600,
-                  ml: 0.5
+                  transition: 'all 0.3s ease',
                 }}>
-                  • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
-                </Box>
-              </Typography>
-            </Box>
-          </Box>
-        </DialogContent>
-      </Dialog>
-    </>
+                  <CardContent sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 1.5,
+                      mb: 3,
+                      color: '#8B0000'
+                    }}>
+                      <PhotoCameraIcon />
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        Photo de profil
+                      </Typography>
+                    </Box>
+                    
+                    <Box
+                      sx={{
+                        flex: 1,
+                        border: '3px dashed',
+                        borderColor: photoPreview ? '#10B981' : alpha('#8B0000', 0.3),
+                        borderRadius: 2,
+                        p: 3,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.3s ease',
+                        backgroundColor: photoPreview ? 'transparent' : alpha('#8B0000', 0.02),
+                        '&:hover': {
+                          borderColor: '#D4AF37',
+                          backgroundColor: alpha('#D4AF37', 0.05),
+                        }
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
+                      />
+                      
+                      {photoPreview ? (
+                        <>
+                          <Avatar
+                            src={photoPreview}
+                            sx={{
+                              width: 140,
+                              height: 140,
+                              mb: 3,
+                              border: '4px solid #D4AF37',
+                              boxShadow: 3,
+                            }}
+                          />
+                          <Button
+                            variant="contained"
+                            color="error"
+                            onClick={removePhoto}
+                            startIcon={<DeleteIcon />}
+                            sx={{ 
+                              borderRadius: 2,
+                              fontWeight: 600,
+                              px: 3,
+                              py: 1,
+                            }}
+                          >
+                            Changer la photo
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <CameraIcon sx={{ 
+                            fontSize: 64, 
+                            color: alpha('#8B0000', 0.4),
+                            mb: 2 
+                          }} />
+                          <Typography variant="h6" sx={{ 
+                            color: 'text.primary',
+                            textAlign: 'center',
+                            mb: 1,
+                            fontWeight: 600
+                          }}>
+                            Ajoutez votre photo
+                          </Typography>
+                          <Typography variant="body2" sx={{ 
+                            color: 'text.secondary',
+                            textAlign: 'center',
+                            mb: 2
+                          }}>
+                            Cliquez pour uploader votre photo
+                          </Typography>
+                          <Typography variant="caption" sx={{ 
+                            color: 'text.secondary',
+                            textAlign: 'center',
+                            display: 'block',
+                            px: 2,
+                          }}>
+                            Format: JPG, PNG, WebP (max 5MB)
+                          </Typography>
+                        </>
+                      )}
+                    </Box>
+                    
+                    {errors.photo && (
+                      <Typography color="error" variant="caption" sx={{ mt: 2, display: 'flex', alignItems: 'center' }}>
+                        <ErrorIcon fontSize="small" sx={{ mr: 1 }} />
+                        {errors.photo[0]}
+                      </Typography>
+                    )}
+                    
+                    <Typography variant="caption" sx={{ 
+                      color: 'text.secondary', 
+                      mt: 3,
+                      textAlign: 'center',
+                      fontStyle: 'italic'
+                    }}>
+                      * Photo obligatoire pour votre profil
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Zoom>
+            </Grid>
+
+            {/* Colonne principale - Informations */}
+            <Grid item xs={12} md={8}>
+              <Grid container spacing={3}>
+                {/* Section Informations Personnelles */}
+                <Grid item xs={12}>
+                  <Fade in style={{ transitionDelay: '200ms' }}>
+                    <Card sx={{ 
+                      borderRadius: 3,
+                      boxShadow: 3,
+                      borderLeft: '4px solid #8B0000',
+                      overflow: 'hidden',
+                    }}>
+                      <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 1.5,
+                          mb: 3,
+                          color: '#8B0000'
+                        }}>
+                          <PersonIcon />
+                          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                            Informations Personnelles
+                          </Typography>
+                        </Box>
+                        
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="nom"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Nom *"
+                                  error={!!fieldState.error || !!errors.nom}
+                                  helperText={fieldState.error?.message || errors.nom?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <PersonIcon sx={{ color: '#8B0000' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                      '&:hover': {
+                                        borderColor: '#D4AF37',
+                                      }
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="prenoms"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Prénoms *"
+                                  error={!!fieldState.error || !!errors.prenoms}
+                                  helperText={fieldState.error?.message || errors.prenoms?.[0] || ''}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="email"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Email *"
+                                  type="email"
+                                  error={!!fieldState.error || !!errors.email}
+                                  helperText={fieldState.error?.message || errors.email?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <EmailIcon sx={{ color: '#8B0000' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="telephone"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Téléphone *"
+                                  error={!!fieldState.error || !!errors.telephone}
+                                  helperText={fieldState.error?.message || errors.telephone?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <PhoneIcon sx={{ color: '#8B0000' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="date_naissance"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Date de naissance *"
+                                  type="date"
+                                  InputLabelProps={{ shrink: true }}
+                                  error={!!fieldState.error || !!errors.date_naissance}
+                                  helperText={fieldState.error?.message || errors.date_naissance?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <CalendarIcon sx={{ color: '#8B0000' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="sexe"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <FormControl fullWidth error={!!fieldState.error || !!errors.sexe}>
+                                  <FormLabel sx={{ 
+                                    mb: 1,
+                                    fontWeight: 600,
+                                    color: 'text.primary'
+                                  }}>
+                                    Sexe *
+                                  </FormLabel>
+                                  <Select
+                                    {...field}
+                                    displayEmpty
+                                    value={field.value || ''}
+                                    sx={{ 
+                                      borderRadius: 2,
+                                      '& .MuiSelect-select': {
+                                        py: 1.5
+                                      }
+                                    }}
+                                  >
+                                    <MenuItem value="" disabled>
+                                      Sélectionnez votre sexe
+                                    </MenuItem>
+                                    <MenuItem value="M">Masculin</MenuItem>
+                                    <MenuItem value="F">Féminin</MenuItem>
+                                  </Select>
+                                  {(fieldState.error || errors.sexe) && (
+                                    <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                      <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                      {fieldState.error?.message || errors.sexe?.[0]}
+                                    </Typography>
+                                  )}
+                                </FormControl>
+                              )}
+                            />
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </Fade>
+                </Grid>
+
+                {/* Section Informations Académiques */}
+                <Grid item xs={12}>
+                  <Fade in style={{ transitionDelay: '300ms' }}>
+                    <Card sx={{ 
+                      borderRadius: 3,
+                      boxShadow: 3,
+                      borderLeft: '4px solid #1976d2',
+                      overflow: 'hidden',
+                    }}>
+                      <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 1.5,
+                          mb: 3,
+                          color: '#1976d2'
+                        }}>
+                          <SchoolIcon />
+                          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                            Informations Académiques
+                          </Typography>
+                        </Box>
+                        
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="origine"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Ville/Région d'origine *"
+                                  error={!!fieldState.error || !!errors.origine}
+                                  helperText={fieldState.error?.message || errors.origine?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <LocationIcon sx={{ color: '#1976d2' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={6}>
+                            <Controller
+                              name="ethnie"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Ethnie (optionnel)"
+                                  error={!!fieldState.error || !!errors.ethnie}
+                                  helperText={fieldState.error?.message || errors.ethnie?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <LanguageIcon sx={{ color: '#1976d2' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12}>
+                            <Controller
+                              name="universite"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Université/École *"
+                                  error={!!fieldState.error || !!errors.universite}
+                                  helperText={fieldState.error?.message || errors.universite?.[0] || ''}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <SchoolIcon sx={{ color: '#1976d2' }} />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={8}>
+                            <Controller
+                              name="filiere"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <TextField
+                                  {...field}
+                                  fullWidth
+                                  label="Filière *"
+                                  error={!!fieldState.error || !!errors.filiere}
+                                  helperText={fieldState.error?.message || errors.filiere?.[0] || ''}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      borderRadius: 2,
+                                    }
+                                  }}
+                                />
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} sm={4}>
+                            <Controller
+                              name="annee_etude"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <FormControl fullWidth error={!!fieldState.error || !!errors.annee_etude}>
+                                  <FormLabel sx={{ 
+                                    mb: 1,
+                                    fontWeight: 600,
+                                  }}>
+                                    Année d'étude *
+                                  </FormLabel>
+                                  <Select
+                                    {...field}
+                                    displayEmpty
+                                    value={field.value || ''}
+                                    sx={{ 
+                                      borderRadius: 2,
+                                      '& .MuiSelect-select': {
+                                        py: 1.5
+                                      }
+                                    }}
+                                  >
+                                    <MenuItem value="" disabled>
+                                      Sélectionnez
+                                    </MenuItem>
+                                    <MenuItem value="Licence 1">Licence 1</MenuItem>
+                                    <MenuItem value="Licence 2">Licence 2</MenuItem>
+                                    <MenuItem value="Licence 3">Licence 3</MenuItem>
+                                    <MenuItem value="Master 1">Master 1</MenuItem>
+                                    <MenuItem value="Master 2">Master 2</MenuItem>
+                                    <MenuItem value="Doctorat">Doctorat</MenuItem>
+                                  </Select>
+                                  {(fieldState.error || errors.annee_etude) && (
+                                    <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                      <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                      {fieldState.error?.message || errors.annee_etude?.[0]}
+                                    </Typography>
+                                  )}
+                                </FormControl>
+                              )}
+                            />
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </Fade>
+                </Grid>
+
+                {/* Section Édition et Catégorie */}
+                <Grid item xs={12}>
+                  <Fade in style={{ transitionDelay: '400ms' }}>
+                    <Card sx={{ 
+                      borderRadius: 3,
+                      boxShadow: 3,
+                      borderLeft: '4px solid #D4AF37',
+                      overflow: 'hidden',
+                      background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.05) 0%, rgba(255, 215, 0, 0.05) 100%)',
+                    }}>
+                      <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 1.5,
+                          mb: 3,
+                          color: '#8B0000'
+                        }}>
+                          <TrophyIcon />
+                          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                            Choix de l'Édition et Catégorie
+                          </Typography>
+                        </Box>
+                        
+                        <Alert 
+                          severity="info" 
+                          icon={<InfoIcon />}
+                          sx={{ 
+                            mb: 3, 
+                            borderRadius: 2,
+                            backgroundColor: alpha('#1976d2', 0.1),
+                          }}
+                        >
+                          <Typography variant="body2">
+                            Sélectionnez l'édition à laquelle vous souhaitez participer et la catégorie correspondante.
+                          </Typography>
+                        </Alert>
+                        
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} md={6}>
+                            <Controller
+                              name="edition_id"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <FormControl fullWidth error={!!fieldState.error || !!errors.edition_id}>
+                                  <FormLabel sx={{ 
+                                    mb: 1,
+                                    fontWeight: 600,
+                                  }}>
+                                    Édition *
+                                  </FormLabel>
+                                  <Select
+                                    {...field}
+                                    displayEmpty
+                                    value={field.value || ''}
+                                    disabled={editionsLoading}
+                                    sx={{ 
+                                      borderRadius: 2,
+                                      '& .MuiSelect-select': {
+                                        py: 1.5
+                                      }
+                                    }}
+                                  >
+                                    <MenuItem value="" disabled>
+                                      {editionsLoading ? (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                          <CircularProgress size={16} />
+                                          Chargement...
+                                        </Box>
+                                      ) : editions.length === 0 ? (
+                                        'Aucune édition disponible'
+                                      ) : 'Sélectionnez une édition'}
+                                    </MenuItem>
+                                    {editions.map((edition) => (
+                                      <MenuItem key={edition.id} value={edition.id}>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                                            {edition.nom}
+                                          </Typography>
+                                          <Box sx={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between',
+                                            mt: 0.5,
+                                            flexWrap: 'wrap',
+                                            gap: 1
+                                          }}>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                              {edition.annee} • {edition.numero_edition}ème édition
+                                            </Typography>
+                                            {edition.date_fin_inscriptions && (
+                                              <Typography variant="caption" sx={{ 
+                                                color: 'error.main',
+                                                fontWeight: 500,
+                                              }}>
+                                                Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        </Box>
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                  {(fieldState.error || errors.edition_id) && (
+                                    <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                      <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                      {fieldState.error?.message || errors.edition_id?.[0]}
+                                    </Typography>
+                                  )}
+                                </FormControl>
+                              )}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} md={6}>
+                            <Controller
+                              name="category_id"
+                              control={control}
+                              render={({ field, fieldState }) => (
+                                <FormControl 
+                                  fullWidth 
+                                  error={!!fieldState.error || !!errors.category_id}
+                                  disabled={categoriesLoading || !watchedEditionId}
+                                >
+                                  <FormLabel sx={{ 
+                                    mb: 1,
+                                    fontWeight: 600,
+                                  }}>
+                                    Catégorie *
+                                  </FormLabel>
+                                  <Select
+                                    {...field}
+                                    displayEmpty
+                                    value={field.value || ''}
+                                    disabled={categoriesLoading || !watchedEditionId}
+                                    sx={{ 
+                                      borderRadius: 2,
+                                      '& .MuiSelect-select': {
+                                        py: 1.5
+                                      }
+                                    }}
+                                  >
+                                    <MenuItem value="" disabled>
+                                      {!watchedEditionId ? (
+                                        'Sélectionnez d\'abord une édition'
+                                      ) : categoriesLoading ? (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                          <CircularProgress size={16} />
+                                          Chargement...
+                                        </Box>
+                                      ) : categories.length === 0 ? (
+                                        'Aucune catégorie disponible'
+                                      ) : 'Sélectionnez une catégorie'}
+                                    </MenuItem>
+                                    {categories.map((category) => (
+                                      <MenuItem key={category.id} value={category.id}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                          <CategoryIcon sx={{ mr: 2, color: '#D4AF37' }} />
+                                          <Typography>{category.nom}</Typography>
+                                        </Box>
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                  {(fieldState.error || errors.category_id) && (
+                                    <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                      <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                      {fieldState.error?.message || errors.category_id?.[0]}
+                                    </Typography>
+                                  )}
+                                </FormControl>
+                              )}
+                            />
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </Fade>
+                </Grid>
+
+                {/* Section Présentation du Talent */}
+                <Grid item xs={12}>
+                  <Fade in style={{ transitionDelay: '500ms' }}>
+                    <Card sx={{ 
+                      borderRadius: 3,
+                      boxShadow: 3,
+                      borderLeft: '4px solid #10B981',
+                      overflow: 'hidden',
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(52, 211, 153, 0.05) 100%)',
+                    }}>
+                      <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 1.5,
+                          mb: 3,
+                          color: '#10B981'
+                        }}>
+                          <StarsIcon />
+                          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                            Présentation de Votre Talent
+                          </Typography>
+                        </Box>
+                        
+                        {/* Vidéo */}
+                        <Box sx={{ mb: 3 }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1.5,
+                            mb: 2,
+                          }}>
+                            <VideoIcon sx={{ color: '#10B981' }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                              Vidéo de présentation *
+                            </Typography>
+                          </Box>
+                          
+                          <Controller
+                            name="video_url"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                              <TextField
+                                fullWidth
+                                label="Lien de votre vidéo (YouTube, TikTok, Vimeo, etc.)"
+                                {...field}
+                                error={!!fieldState.error || !!errors.video_url}
+                                helperText={
+                                  (fieldState.error?.message || errors.video_url?.[0]) || 
+                                  "Partagez un lien vers votre vidéo de présentation"
+                                }
+                                InputProps={{
+                                  startAdornment: (
+                                    <InputAdornment position="start">
+                                      <VideoIcon sx={{ color: '#10B981' }} />
+                                    </InputAdornment>
+                                  ),
+                                }}
+                                sx={{
+                                  mb: 2,
+                                  '& .MuiOutlinedInput-root': {
+                                    borderRadius: 2,
+                                  }
+                                }}
+                              />
+                            )}
+                          />
+                          
+                          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                            Ou téléchargez votre vidéo directement :
+                          </Typography>
+                          
+                          <Box
+                            sx={{
+                              border: '2px dashed',
+                              borderColor: videoPreview ? '#10B981' : alpha('#10B981', 0.3),
+                              borderRadius: 2,
+                              p: 3,
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              backgroundColor: videoPreview ? alpha('#10B981', 0.05) : 'transparent',
+                              transition: 'all 0.3s ease',
+                              '&:hover': {
+                                borderColor: '#10B981',
+                                backgroundColor: alpha('#10B981', 0.1),
+                              }
+                            }}
+                            onClick={() => videoInputRef.current?.click()}
+                          >
+                            <input
+                              type="file"
+                              accept="video/*"
+                              onChange={handleVideoUpload}
+                              ref={videoInputRef}
+                              style={{ display: 'none' }}
+                            />
+                            
+                            {videoPreview ? (
+                              <Box>
+                                <Typography variant="body1" sx={{ fontWeight: 600, mb: 1, color: '#10B981' }}>
+                                  ✓ Vidéo sélectionnée
+                                </Typography>
+                                <Button
+                                  variant="outlined"
+                                  color="error"
+                                  onClick={removeVideo}
+                                  startIcon={<DeleteIcon />}
+                                  sx={{ 
+                                    borderRadius: 2,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Supprimer la vidéo
+                                </Button>
+                              </Box>
+                            ) : (
+                              <Box>
+                                <UploadFileIcon sx={{ fontSize: 48, color: alpha('#10B981', 0.5), mb: 1 }} />
+                                <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
+                                  Cliquez pour uploader votre vidéo
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                  Formats: MP4, MOV, AVI, WebM (max 100MB)
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
+                          
+                          {(formErrors.video_url || formErrors.videoFile) && (
+                            <Typography color="error" variant="caption" sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
+                              <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                              {formErrors.video_url?.message || formErrors.videoFile?.message || 'Vidéo requise'}
+                            </Typography>
+                          )}
+                        </Box>
+                        
+                        <Divider sx={{ my: 3 }} />
+                        
+                        {/* Description */}
+                        <Box>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1.5,
+                            mb: 2,
+                          }}>
+                            <DescriptionIcon sx={{ color: '#10B981' }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                              Description de votre talent *
+                            </Typography>
+                          </Box>
+                          
+                          <Controller
+                            name="description_talent"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                              <TextField
+                                {...field}
+                                fullWidth
+                                multiline
+                                rows={4}
+                                placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
+                                error={!!fieldState.error || !!errors.description_talent}
+                                helperText={
+                                  <Box sx={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between',
+                                    mt: 0.5,
+                                    alignItems: 'center'
+                                  }}>
+                                    <span>
+                                      {fieldState.error?.message || errors.description_talent?.[0] || 
+                                       (field.value?.length < 100 
+                                         ? `Minimum ${100 - (field.value?.length || 0)} caractères restants` 
+                                         : 'Description suffisante')}
+                                    </span>
+                                    <Chip 
+                                      size="small"
+                                      label={`${field.value?.length || 0}/2000`}
+                                      color={
+                                        (field.value?.length || 0) > 2000 ? 'error' : 
+                                        (field.value?.length || 0) >= 100 ? 'success' : 'default'
+                                      }
+                                      sx={{ 
+                                        fontWeight: 500,
+                                      }}
+                                    />
+                                  </Box>
+                                }
+                                sx={{
+                                  '& .MuiOutlinedInput-root': {
+                                    borderRadius: 2,
+                                  }
+                                }}
+                              />
+                            )}
+                          />
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Fade>
+                </Grid>
+
+                {/* Bouton de soumission */}
+                <Grid item xs={12}>
+                  <Fade in style={{ transitionDelay: '600ms' }}>
+                    <Card sx={{ 
+                      borderRadius: 3,
+                      boxShadow: 3,
+                      background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
+                      color: 'white',
+                    }}>
+                      <CardContent sx={{ p: 3, textAlign: 'center' }}>
+                        <Alert 
+                          severity="warning" 
+                          icon={<WarningIcon />}
+                          sx={{ 
+                            mb: 3,
+                            borderRadius: 2,
+                            backgroundColor: alpha('#fff3cd', 0.2),
+                            color: 'white',
+                            '& .MuiAlert-icon': { color: '#ffc107' }
+                          }}
+                        >
+                          <Typography variant="body2">
+                            <strong>Important :</strong> Vérifiez bien toutes les informations avant de soumettre. 
+                            Vous recevrez un email de confirmation une fois votre candidature traitée.
+                          </Typography>
+                        </Alert>
+                        
+                        <Button
+                          type="submit"
+                          variant="contained"
+                          disabled={isSubmitting || !photoFile}
+                          startIcon={isSubmitting ? 
+                            <CircularProgress size={20} color="inherit" /> : 
+                            <CloudDoneIcon />
+                          }
+                          sx={{
+                            background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
+                            color: 'black',
+                            fontWeight: 800,
+                            fontSize: '1.1rem',
+                            borderRadius: 3,
+                            px: 6,
+                            py: 2,
+                            minWidth: 250,
+                            boxShadow: 3,
+                            '&:hover': {
+                              background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
+                              boxShadow: 6,
+                              transform: 'translateY(-2px)',
+                            },
+                            '&:disabled': {
+                              background: '#e5e7eb',
+                              color: '#9ca3af',
+                              transform: 'none',
+                            },
+                            transition: 'all 0.3s ease',
+                          }}
+                        >
+                          {isSubmitting ? 'Soumission en cours...' : 'Soumettre ma candidature'}
+                        </Button>
+                        
+                        <Typography variant="caption" sx={{ 
+                          color: 'rgba(255, 255, 255, 0.8)', 
+                          mt: 2, 
+                          display: 'block',
+                          fontStyle: 'italic'
+                        }}>
+                          En soumettant, vous acceptez les conditions de participation
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Fade>
+                </Grid>
+              </Grid>
+            </Grid>
+          </Grid>
+        </Box>
+        
+        {/* Footer */}
+        <Box sx={{ 
+          mt: 4, 
+          pt: 3, 
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          textAlign: 'center'
+        }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            © {new Date().getFullYear()} Show Your Talent - Tous droits réservés
+          </Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
+            Besoin d'aide ? Contactez-nous à support@showyourtalent.com
+          </Typography>
+        </Box>
+      </Container>
+    </Box>
   );
 };
 
