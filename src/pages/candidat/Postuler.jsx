@@ -36,8 +36,7 @@ import {
   Stack,
   Dialog,
   DialogContent,
-  DialogTitle,
-  DialogActions,
+  Divider,
   Backdrop,
 } from '@mui/material';
 import {
@@ -167,7 +166,6 @@ const Postuler = () => {
     setValue,
     trigger,
     clearErrors,
-    reset,
     getValues,
     formState: { errors: formErrors, isDirty, isValid },
   } = useForm({
@@ -197,24 +195,21 @@ const Postuler = () => {
   const watchedEditionId = watch('edition_id');
   const watchedCategoryId = watch('category_id');
   const descriptionValue = watch('description_talent') || '';
-  const videoUrlValue = watch('video_url');
 
   // ==================== STATES ====================
   const [activeStep, setActiveStep] = useState(0);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [videoFile, setVideoFile] = useState(null);
-  const [videoPreview, setVideoPreview] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [stepTransition, setStepTransition] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   const fileInputRef = useRef(null);
-  const videoInputRef = useRef(null);
   const formRef = useRef(null);
-  const stepTimeoutRef = useRef(null);
+  const stepContentRef = useRef(null);
 
   // ==================== QUERIES OPTIMISÉES ====================
   const { 
@@ -269,7 +264,6 @@ const Postuler = () => {
       if (!watchedEditionId) return [];
       try {
         const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`);
-        console.log('Catégories API response:', response.data);
         return response.data?.data || response.data || [];
       } catch (error) {
         console.error('Erreur chargement catégories:', error);
@@ -359,10 +353,26 @@ const Postuler = () => {
 
   // ==================== FONCTIONS ====================
   const steps = useMemo(() => [
-    { label: 'Informations personnelles', icon: <PersonIcon />, fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] },
-    { label: 'Informations académiques', icon: <SchoolIcon />, fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] },
-    { label: 'Choix de l\'édition', icon: <TrophyIcon />, fields: ['edition_id', 'category_id'] },
-    { label: 'Présentation du talent', icon: <VideoIcon />, fields: ['video_url', 'description_talent'] },
+    { 
+      label: 'Informations personnelles', 
+      icon: <PersonIcon />, 
+      fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] 
+    },
+    { 
+      label: 'Informations académiques', 
+      icon: <SchoolIcon />, 
+      fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] 
+    },
+    { 
+      label: 'Choix de l\'édition', 
+      icon: <TrophyIcon />, 
+      fields: ['edition_id', 'category_id'] 
+    },
+    { 
+      label: 'Présentation du talent', 
+      icon: <VideoIcon />, 
+      fields: ['video_url', 'description_talent'] 
+    },
   ], []);
 
   const getCurrentEdition = useCallback(() => {
@@ -399,47 +409,62 @@ const Postuler = () => {
     }
   }, [watchedEditionId, setValue, getValues]);
 
-  // Cleanup timeout
-  useEffect(() => {
-    return () => {
-      if (stepTimeoutRef.current) {
-        clearTimeout(stepTimeoutRef.current);
-      }
-    };
-  }, []);
-
   // ==================== HANDLERS ====================
   const handleNext = useCallback(async () => {
-    const currentStepFields = steps[activeStep]?.fields || [];
-    if (currentStepFields.length === 0) {
-      setStepTransition(true);
-      stepTimeoutRef.current = setTimeout(() => {
+    // Empêcher les actions multiples pendant la transition
+    if (isTransitioning) return;
+    
+    setIsTransitioning(true);
+    
+    try {
+      const currentStepFields = steps[activeStep]?.fields || [];
+      
+      if (currentStepFields.length === 0) {
         setActiveStep(prev => prev + 1);
-        setStepTransition(false);
-      }, 150);
-      return;
-    }
+        return;
+      }
 
-    const isValid = await trigger(currentStepFields);
-    if (isValid) {
-      setStepTransition(true);
-      stepTimeoutRef.current = setTimeout(() => {
+      const isValid = await trigger(currentStepFields);
+      if (isValid) {
+        // Petit délai pour éviter les conflits d'animation
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
         setActiveStep(prev => prev + 1);
         clearErrors();
-        setStepTransition(false);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }, 150);
+        
+        // Scroller en haut avec un léger délai
+        setTimeout(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Erreur lors de la navigation:', error);
+    } finally {
+      // Réactiver les interactions après un délai
+      setTimeout(() => {
+        setIsTransitioning(false);
+      }, 200);
     }
-  }, [activeStep, steps, trigger, clearErrors]);
+  }, [activeStep, steps, trigger, clearErrors, isTransitioning]);
 
   const handleBack = useCallback(() => {
-    setStepTransition(true);
-    stepTimeoutRef.current = setTimeout(() => {
+    if (isTransitioning) return;
+    
+    setIsTransitioning(true);
+    
+    try {
       setActiveStep(prev => prev - 1);
-      setStepTransition(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 150);
-  }, []);
+      clearErrors();
+      
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsTransitioning(false);
+      }, 150);
+    } catch (error) {
+      console.error('Erreur lors du retour:', error);
+      setIsTransitioning(false);
+    }
+  }, [clearErrors, isTransitioning]);
 
   const handleClose = useCallback(() => {
     if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
@@ -470,28 +495,6 @@ const Postuler = () => {
     reader.readAsDataURL(file);
   }, []);
 
-  const handleVideoUpload = useCallback((event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validation
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('La vidéo ne doit pas dépasser 100MB');
-      return;
-    }
-    if (!['video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime'].includes(file.type)) {
-      toast.error('Format non supporté. Utilisez MP4, MOV, AVI ou WebM');
-      return;
-    }
-
-    setVideoFile(file);
-    setValue('videoFile', file, { shouldValidate: true });
-    
-    // Create preview URL
-    const videoURL = URL.createObjectURL(file);
-    setVideoPreview(videoURL);
-  }, [setValue]);
-
   const removePhoto = useCallback((e) => {
     e?.stopPropagation();
     setPhotoFile(null);
@@ -501,18 +504,9 @@ const Postuler = () => {
     }
   }, []);
 
-  const removeVideo = useCallback((e) => {
-    e?.stopPropagation();
-    setVideoFile(null);
-    setVideoPreview('');
-    setValue('video_url', '', { shouldValidate: false });
-    setValue('videoFile', null, { shouldValidate: true });
-    if (videoInputRef.current) {
-      videoInputRef.current.value = '';
-    }
-  }, [setValue]);
-
   const onSubmit = useCallback(async (data) => {
+    if (isSubmitting || isTransitioning) return;
+    
     // Validation finale
     const isValid = await trigger();
     if (!isValid) {
@@ -520,11 +514,7 @@ const Postuler = () => {
       return;
     }
 
-    if (!photoFile) {
-      toast.error('Veuillez ajouter une photo de profil');
-      return;
-    }
-
+    setIsTransitioning(true);
     setUploadProgress(0);
     setErrors({});
     
@@ -541,21 +531,25 @@ const Postuler = () => {
     if (photoFile) {
       formData.append('photo', photoFile);
     }
-    if (videoFile) {
-      formData.append('video', videoFile);
-    } else if (data.video_url) {
+    if (data.video_url) {
       formData.append('video_url', data.video_url);
     }
 
     mutation.mutate(formData);
-  }, [photoFile, videoFile, trigger, mutation]);
+  }, [photoFile, trigger, mutation, isSubmitting, isTransitioning]);
 
   // ==================== RENDER FUNCTIONS ====================
   const renderStepContent = () => {
-    // Simple rendering sans animations problématiques
-    switch (activeStep) {
-      case 0:
-        return (
+    // Animation simplifiée pour éviter les erreurs DOM
+    return (
+      <Box 
+        key={`step-${activeStep}`}
+        sx={{ 
+          opacity: isTransitioning ? 0.7 : 1,
+          transition: 'opacity 0.2s ease',
+        }}
+      >
+        {activeStep === 0 && (
           <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
@@ -578,10 +572,6 @@ const Postuler = () => {
                   border: '2px solid',
                   borderColor: photoPreview ? '#10B981' : 'divider',
                   transition: 'all 0.3s ease',
-                  '&:hover': {
-                    borderColor: '#D4AF37',
-                    boxShadow: 2,
-                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <Typography variant="subtitle2" sx={{ 
@@ -607,12 +597,8 @@ const Postuler = () => {
                         alignItems: 'center',
                         justifyContent: 'center',
                         transition: 'all 0.3s ease',
-                        '&:hover': {
-                          borderColor: '#D4AF37',
-                          backgroundColor: alpha('#D4AF37', 0.02),
-                        }
                       }}
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => !isTransitioning && fileInputRef.current?.click()}
                     >
                       <input
                         type="file"
@@ -640,6 +626,7 @@ const Postuler = () => {
                             color="error"
                             onClick={removePhoto}
                             startIcon={<DeleteIcon />}
+                            disabled={isTransitioning}
                             sx={{ 
                               borderRadius: 1,
                               textTransform: 'none',
@@ -708,6 +695,7 @@ const Postuler = () => {
                             InputLabelProps={field.type === 'date' ? { shrink: true } : {}}
                             error={!!fieldState.error || !!errors[field.name]}
                             helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
+                            disabled={isTransitioning}
                             InputProps={{
                               startAdornment: field.icon ? (
                                 <InputAdornment position="start">
@@ -716,9 +704,6 @@ const Postuler = () => {
                               ) : undefined,
                               sx: {
                                 borderRadius: 1,
-                                '& input': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
                               }
                             }}
                           />
@@ -746,11 +731,9 @@ const Postuler = () => {
                             {...field}
                             displayEmpty
                             value={field.value || ''}
+                            disabled={isTransitioning}
                             sx={{ 
                               borderRadius: 1,
-                              '& .MuiSelect-select': {
-                                py: isMobile ? 1.25 : 1.5
-                              }
                             }}
                           >
                             <MenuItem value="" disabled>
@@ -773,10 +756,9 @@ const Postuler = () => {
               </Grid>
             </Grid>
           </Box>
-        );
+        )}
 
-      case 1:
-        return (
+        {activeStep === 1 && (
           <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
@@ -808,6 +790,7 @@ const Postuler = () => {
                         label={field.label}
                         error={!!fieldState.error || !!errors[field.name]}
                         helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
+                        disabled={isTransitioning}
                         InputProps={{
                           startAdornment: field.icon ? (
                             <InputAdornment position="start">
@@ -816,9 +799,6 @@ const Postuler = () => {
                           ) : undefined,
                           sx: {
                             borderRadius: 1,
-                            '& input': {
-                              py: isMobile ? 1.25 : 1.5
-                            }
                           }
                         }}
                       />
@@ -845,11 +825,9 @@ const Postuler = () => {
                         {...field}
                         displayEmpty
                         value={field.value || ''}
+                        disabled={isTransitioning}
                         sx={{ 
                           borderRadius: 1,
-                          '& .MuiSelect-select': {
-                            py: isMobile ? 1.25 : 1.5
-                          }
                         }}
                       >
                         <MenuItem value="" disabled>
@@ -874,10 +852,9 @@ const Postuler = () => {
               </Grid>
             </Grid>
           </Box>
-        );
+        )}
 
-      case 2:
-        return (
+        {activeStep === 2 && (
           <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
@@ -915,9 +892,6 @@ const Postuler = () => {
                   border: '2px solid',
                   borderColor: formErrors.edition_id ? 'error.main' : 'divider',
                   transition: 'all 0.3s ease',
-                  '&:hover': {
-                    borderColor: '#D4AF37',
-                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <Controller
@@ -937,12 +911,9 @@ const Postuler = () => {
                             {...field}
                             displayEmpty
                             value={field.value || ''}
-                            disabled={editionsLoading || editionsFetching}
+                            disabled={editionsLoading || editionsFetching || isTransitioning}
                             sx={{ 
                               borderRadius: 1,
-                              '& .MuiSelect-select': {
-                                py: isMobile ? 1.25 : 1.5
-                              }
                             }}
                           >
                             <MenuItem value="" disabled>
@@ -1014,9 +985,6 @@ const Postuler = () => {
                     border: '2px solid',
                     borderColor: formErrors.category_id ? 'error.main' : 'divider',
                     transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
                   }}>
                     <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                       <Controller
@@ -1026,7 +994,7 @@ const Postuler = () => {
                           <FormControl 
                             fullWidth 
                             error={!!fieldState.error || !!errors.category_id}
-                            disabled={categoriesLoading || categoriesError || categoriesFetching}
+                            disabled={categoriesLoading || categoriesError || categoriesFetching || isTransitioning}
                           >
                             <FormLabel sx={{ 
                               mb: 1,
@@ -1040,12 +1008,9 @@ const Postuler = () => {
                               {...field}
                               displayEmpty
                               value={field.value || ''}
-                              disabled={categoriesLoading || categoriesError || categoriesFetching}
+                              disabled={categoriesLoading || categoriesError || categoriesFetching || isTransitioning}
                               sx={{ 
                                 borderRadius: 1,
-                                '& .MuiSelect-select': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
                               }}
                             >
                               <MenuItem value="" disabled>
@@ -1104,10 +1069,6 @@ const Postuler = () => {
                     borderRadius: 2,
                     background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
                     border: '1px solid rgba(212, 175, 55, 0.3)',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: 2,
-                    },
                     transition: 'all 0.3s ease'
                   }}>
                     <CardContent>
@@ -1176,10 +1137,9 @@ const Postuler = () => {
               )}
             </Grid>
           </Box>
-        );
+        )}
 
-      case 3:
-        return (
+        {activeStep === 3 && (
           <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
@@ -1199,12 +1159,8 @@ const Postuler = () => {
                 <Card sx={{ 
                   borderRadius: 2,
                   border: '2px solid',
-                  borderColor: videoPreview ? '#10B981' : 
-                            (formErrors.video_url || formErrors.videoFile) ? 'error.main' : 'divider',
+                  borderColor: formErrors.video_url || formErrors.videoFile ? 'error.main' : 'divider',
                   transition: 'all 0.3s ease',
-                  '&:hover': {
-                    borderColor: '#D4AF37',
-                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
@@ -1222,13 +1178,14 @@ const Postuler = () => {
                         render={({ field, fieldState }) => (
                           <TextField
                             fullWidth
-                            label="URL de vôtre vidéo"
+                            label="URL de votre vidéo"
                             {...field}
                             error={!!fieldState.error || !!errors.video_url}
                             helperText={
                               (fieldState.error?.message || errors.video_url?.[0]) || 
-                              "Lien Tiktok YouTube, Vimeo, ou autre plateforme"
+                              "Lien TikTok, YouTube, Vimeo, ou autre plateforme"
                             }
+                            disabled={isTransitioning}
                             InputProps={{
                               startAdornment: (
                                 <InputAdornment position="start">
@@ -1237,9 +1194,6 @@ const Postuler = () => {
                               ),
                               sx: {
                                 borderRadius: 1,
-                                '& input': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
                               }
                             }}
                           />
@@ -1264,9 +1218,6 @@ const Postuler = () => {
                   border: '2px solid',
                   borderColor: formErrors.description_talent ? 'error.main' : 'divider',
                   transition: 'all 0.3s ease',
-                  '&:hover': {
-                    borderColor: '#D4AF37',
-                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <Controller
@@ -1280,6 +1231,7 @@ const Postuler = () => {
                           multiline
                           rows={isMobile ? 4 : 6}
                           error={!!fieldState.error || !!errors.description_talent}
+                          disabled={isTransitioning}
                           helperText={
                             <Box sx={{ 
                               display: 'flex', 
@@ -1311,9 +1263,6 @@ const Postuler = () => {
                           InputProps={{
                             sx: {
                               borderRadius: 1,
-                              '& textarea': {
-                                py: isMobile ? 1.25 : 1.5
-                              }
                             }
                           }}
                         />
@@ -1341,15 +1290,12 @@ const Postuler = () => {
               </Grid>
             </Grid>
           </Box>
-        );
-
-      default:
-        return null;
-    }
+        )}
+      </Box>
+    );
   };
 
   // ==================== RENDER ====================
-  // Loading state initial
   if (isInitialLoad && editionsLoading) {
     return (
       <Dialog open={true} maxWidth="md" fullWidth fullScreen={isMobile}>
@@ -1370,13 +1316,17 @@ const Postuler = () => {
 
   return (
     <>
+      {/* Backdrop pour bloquer les interactions pendant les transitions */}
       <Backdrop
-        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
-        open={stepTransition}
-      >
-        <CircularProgress color="inherit" />
-      </Backdrop>
-      
+        sx={{ 
+          color: '#fff', 
+          zIndex: 9999,
+          backgroundColor: 'rgba(0, 0, 0, 0.1)'
+        }}
+        open={isTransitioning}
+        invisible={!isTransitioning}
+      />
+
       <Dialog
         open={true}
         onClose={handleClose}
@@ -1459,7 +1409,7 @@ const Postuler = () => {
                   sx={{
                     color: 'rgba(255, 255, 255, 0.9)',
                     mt: 0.5
-                }}
+                  }}
                 >
                   Montrez votre talent au monde entier
                 </Typography>
@@ -1469,6 +1419,7 @@ const Postuler = () => {
             <IconButton
               onClick={handleClose}
               size={isMobile ? "small" : "medium"}
+              disabled={isTransitioning}
               sx={{
                 color: 'white',
                 backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -1601,7 +1552,16 @@ const Postuler = () => {
           )}
 
           {/* Contenu du formulaire */}
-          <Box ref={formRef} component="form" onSubmit={handleSubmit(onSubmit)}>
+          <Box 
+            ref={formRef} 
+            component="form" 
+            onSubmit={handleSubmit(onSubmit)}
+            sx={{ 
+              pointerEvents: isTransitioning ? 'none' : 'auto',
+              opacity: isTransitioning ? 0.8 : 1,
+              transition: 'opacity 0.2s ease'
+            }}
+          >
             {renderStepContent()}
 
             {/* Navigation buttons */}
@@ -1617,7 +1577,7 @@ const Postuler = () => {
             }}>
               <Button
                 onClick={handleBack}
-                disabled={activeStep === 0 || isSubmitting}
+                disabled={activeStep === 0 || isSubmitting || isTransitioning}
                 startIcon={<ArrowBackIcon />}
                 variant="outlined"
                 sx={{
@@ -1631,10 +1591,6 @@ const Postuler = () => {
                   '&:hover': {
                     backgroundColor: 'rgba(139, 0, 0, 0.04)',
                     borderColor: '#7a0000',
-                  },
-                  '&.Mui-disabled': {
-                    borderColor: '#e5e7eb',
-                    color: '#9ca3af',
                   },
                   transition: 'all 0.2s ease',
                 }}
@@ -1652,7 +1608,7 @@ const Postuler = () => {
                   <Button
                     type="submit"
                     variant="contained"
-                    disabled={isSubmitting || getStepError() || !photoFile}
+                    disabled={isSubmitting || getStepError() || isTransitioning}
                     startIcon={isSubmitting ? 
                       <CircularProgress size={20} color="inherit" /> : 
                       <CloudDoneIcon />
@@ -1669,10 +1625,6 @@ const Postuler = () => {
                         background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
                         boxShadow: 2,
                       },
-                      '&.Mui-disabled': {
-                        background: '#e5e7eb',
-                        color: '#9ca3af',
-                      },
                       transition: 'all 0.3s ease',
                     }}
                   >
@@ -1683,7 +1635,7 @@ const Postuler = () => {
                     onClick={handleNext}
                     variant="contained"
                     endIcon={<ArrowForwardIcon />}
-                    disabled={getStepError()}
+                    disabled={getStepError() || isTransitioning}
                     sx={{
                       background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
                       color: 'black',
@@ -1695,10 +1647,6 @@ const Postuler = () => {
                       '&:hover': {
                         background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
                         boxShadow: 2,
-                      },
-                      '&.Mui-disabled': {
-                        background: '#e5e7eb',
-                        color: '#9ca3af',
                       },
                       transition: 'all 0.3s ease',
                     }}
