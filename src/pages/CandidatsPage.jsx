@@ -451,7 +451,7 @@ const CandidatsPage = () => {
     
     const interval = setInterval(() => {
       fetchCandidats();
-    }, 30000); // Refresh every 30 seconds
+    }, 300000); // Refresh every 30 seconds
     
     return () => clearInterval(interval);
   }, [fetchCandidats]);
