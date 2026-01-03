@@ -13,6 +13,7 @@ import {
   CardContent,
   FormControl,
   FormLabel,
+  InputLabel,
   TextField,
   Select,
   MenuItem,
@@ -26,16 +27,12 @@ import {
   CircularProgress,
   useMediaQuery,
   useTheme,
-  alpha,
   Chip,
-  Paper,
-  Stack,
-  Dialog,
-  DialogContent,
-  Container,
   Stepper,
   Step,
   StepLabel,
+  Dialog,
+  DialogContent,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -56,7 +53,6 @@ import {
   AccessTime as TimeIcon,
   LocationOn as LocationIcon,
   Language as LanguageIcon,
-  CheckCircle as CheckIcon,
   NavigateNext as NextIcon,
   NavigateBefore as PrevIcon,
 } from '@mui/icons-material';
@@ -160,7 +156,7 @@ const Postuler = () => {
     setValue,
     trigger,
     clearErrors,
-    formState: { errors: formErrors, isDirty, isValid },
+    formState: { errors: formErrors, isDirty },
   } = useForm({
     resolver: yupResolver(schema),
     mode: 'onChange',
@@ -445,15 +441,15 @@ const Postuler = () => {
       case 0:
         return (
           <Box>
-            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000' }}>
+            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000', fontWeight: 600 }}>
               Informations personnelles
             </Typography>
             
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
-                <Card sx={{ height: '100%', border: '2px dashed #ddd' }}>
+                <Card sx={{ height: '100%', border: '2px dashed #ddd', borderRadius: 2 }}>
                   <CardContent sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 2, textAlign: 'center' }}>
+                    <Typography variant="subtitle2" sx={{ mb: 2, textAlign: 'center', fontWeight: 500 }}>
                       Photo de profil
                     </Typography>
                     
@@ -469,6 +465,11 @@ const Postuler = () => {
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          borderColor: '#D4AF37',
+                          backgroundColor: 'rgba(212, 175, 55, 0.05)',
+                        }
                       }}
                       onClick={() => fileInputRef.current?.click()}
                     >
@@ -488,6 +489,7 @@ const Postuler = () => {
                               width: 80,
                               height: 80,
                               mb: 1,
+                              border: '2px solid #D4AF37',
                             }}
                           />
                           <Button
@@ -496,6 +498,7 @@ const Postuler = () => {
                             color="error"
                             onClick={removePhoto}
                             startIcon={<DeleteIcon />}
+                            sx={{ mt: 1 }}
                           >
                             Changer
                           </Button>
@@ -564,7 +567,7 @@ const Postuler = () => {
                             <MenuItem value="F">Féminin</MenuItem>
                           </Select>
                           {fieldState.error && (
-                            <Typography variant="caption" color="error">
+                            <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
                               {fieldState.error.message}
                             </Typography>
                           )}
@@ -581,7 +584,7 @@ const Postuler = () => {
       case 1:
         return (
           <Box>
-            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000' }}>
+            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000', fontWeight: 600 }}>
               Informations académiques
             </Typography>
             
@@ -633,7 +636,7 @@ const Postuler = () => {
                         <MenuItem value="Doctorat">Doctorat</MenuItem>
                       </Select>
                       {fieldState.error && (
-                        <Typography variant="caption" color="error">
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
                           {fieldState.error.message}
                         </Typography>
                       )}
@@ -648,12 +651,14 @@ const Postuler = () => {
       case 2:
         return (
           <Box>
-            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000' }}>
+            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000', fontWeight: 600 }}>
               Choix de l'édition et catégorie
             </Typography>
             
-            <Alert severity="info" sx={{ mb: 3 }}>
-              Sélectionnez l'édition à laquelle vous souhaitez participer et la catégorie correspondante.
+            <Alert severity="info" sx={{ mb: 3, borderRadius: 1 }}>
+              <Typography variant="body2">
+                Sélectionnez l'édition à laquelle vous souhaitez participer et la catégorie correspondante.
+              </Typography>
             </Alert>
 
             <Grid container spacing={2}>
@@ -670,12 +675,17 @@ const Postuler = () => {
                         </MenuItem>
                         {editions.map((edition) => (
                           <MenuItem key={edition.id} value={edition.id}>
-                            {edition.nom} ({edition.annee})
+                            <Box>
+                              <Typography variant="body1">{edition.nom}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {edition.annee} • {edition.numero_edition}ème édition
+                              </Typography>
+                            </Box>
                           </MenuItem>
                         ))}
                       </Select>
                       {fieldState.error && (
-                        <Typography variant="caption" color="error">
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
                           {fieldState.error.message}
                         </Typography>
                       )}
@@ -698,12 +708,15 @@ const Postuler = () => {
                           </MenuItem>
                           {categories.map((category) => (
                             <MenuItem key={category.id} value={category.id}>
-                              {category.nom}
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <CategoryIcon sx={{ mr: 1, color: '#8B0000' }} />
+                                <Typography>{category.nom}</Typography>
+                              </Box>
                             </MenuItem>
                           ))}
                         </Select>
                         {fieldState.error && (
-                          <Typography variant="caption" color="error">
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
                             {fieldState.error.message}
                           </Typography>
                         )}
@@ -719,7 +732,7 @@ const Postuler = () => {
       case 3:
         return (
           <Box>
-            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000' }}>
+            <Typography variant="h6" sx={{ mb: 3, color: '#8B0000', fontWeight: 600 }}>
               Présentation de votre talent
             </Typography>
             
@@ -763,7 +776,7 @@ const Postuler = () => {
                       placeholder="Décrivez votre talent, votre expérience, vos réalisations..."
                       error={!!fieldState.error}
                       helperText={
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5, alignItems: 'center' }}>
                           <span>
                             {fieldState.error?.message || 
                              (field.value?.length < 100 
@@ -777,6 +790,7 @@ const Postuler = () => {
                               (field.value?.length || 0) > 2000 ? 'error' : 
                               (field.value?.length || 0) >= 100 ? 'success' : 'default'
                             }
+                            sx={{ fontWeight: 500 }}
                           />
                         </Box>
                       }
@@ -786,7 +800,7 @@ const Postuler = () => {
               </Grid>
 
               <Grid item xs={12}>
-                <Alert severity="warning">
+                <Alert severity="warning" sx={{ borderRadius: 1 }}>
                   <Typography variant="body2">
                     <strong>Important :</strong> Votre candidature sera soumise pour validation. 
                     Vérifiez bien toutes les informations avant de soumettre.
@@ -809,7 +823,7 @@ const Postuler = () => {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
             <CircularProgress size={60} sx={{ color: '#8B0000', mb: 3 }} />
-            <Typography variant="h6" sx={{ color: '#8B0000' }}>
+            <Typography variant="h6" sx={{ color: '#8B0000', fontWeight: 600 }}>
               Chargement...
             </Typography>
           </Box>
@@ -832,6 +846,7 @@ const Postuler = () => {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          borderRadius: isMobile ? 0 : 2,
         }
       }}
     >
@@ -853,12 +868,13 @@ const Postuler = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 border: '3px solid #D4AF37',
+                boxShadow: 1,
               }}
             >
               <TrophyIcon sx={{ color: '#8B0000', fontSize: 28 }} />
             </Box>
             <Box>
-              <Typography variant="h6" sx={{ color: 'white', fontWeight: 600 }}>
+              <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, fontSize: isMobile ? '1.1rem' : '1.25rem' }}>
                 Postuler à une édition
               </Typography>
               <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)' }}>
@@ -867,7 +883,16 @@ const Postuler = () => {
             </Box>
           </Box>
 
-          <IconButton onClick={handleClose} sx={{ color: 'white' }}>
+          <IconButton 
+            onClick={handleClose} 
+            sx={{ 
+              color: 'white',
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              '&:hover': {
+                backgroundColor: 'rgba(255,255,255,0.2)',
+              }
+            }}
+          >
             <CloseIcon />
           </IconButton>
         </Box>
@@ -895,7 +920,8 @@ const Postuler = () => {
                 <StepLabel sx={{ 
                   '& .MuiStepLabel-label': { 
                     color: 'rgba(255,255,255,0.9)',
-                    '&.Mui-active': { color: 'white' },
+                    fontSize: '0.875rem',
+                    '&.Mui-active': { color: 'white', fontWeight: 600 },
                     '&.Mui-completed': { color: '#D4AF37' }
                   } 
                 }}>
@@ -922,9 +948,16 @@ const Postuler = () => {
             <LinearProgress 
               variant="determinate" 
               value={uploadProgress}
-              sx={{ height: 8, borderRadius: 4, mb: 1 }}
+              sx={{ 
+                height: 8, 
+                borderRadius: 4, 
+                mb: 1,
+                '& .MuiLinearProgress-bar': {
+                  backgroundColor: '#D4AF37',
+                }
+              }}
             />
-            <Typography variant="caption" sx={{ textAlign: 'center', display: 'block' }}>
+            <Typography variant="caption" sx={{ textAlign: 'center', display: 'block', color: 'text.secondary' }}>
               Upload en cours... {uploadProgress}%
             </Typography>
           </Box>
@@ -932,8 +965,15 @@ const Postuler = () => {
 
         {/* Errors */}
         {Object.keys(errors).length > 0 && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setErrors({})}>
-            <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
+          <Alert 
+            severity="error" 
+            sx={{ mb: 3, borderRadius: 1 }} 
+            onClose={() => setErrors({})}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+              Veuillez corriger les erreurs suivantes :
+            </Typography>
+            <Box component="ul" sx={{ mt: 0.5, mb: 0, pl: 2 }}>
               {Object.entries(errors).map(([field, messages]) => (
                 <li key={field}>
                   <Typography variant="caption">
@@ -956,14 +996,23 @@ const Postuler = () => {
             mt: 4, 
             pt: 3,
             borderTop: '1px solid #eee',
-            gap: 2
+            gap: 2,
+            flexWrap: 'wrap'
           }}>
             <Button
               onClick={handleBack}
               disabled={activeStep === 0 || isSubmitting}
               startIcon={<PrevIcon />}
               variant="outlined"
-              sx={{ minWidth: 120 }}
+              sx={{ 
+                minWidth: isMobile ? 100 : 120,
+                borderColor: '#8B0000',
+                color: '#8B0000',
+                '&:hover': {
+                  borderColor: '#7a0000',
+                  backgroundColor: 'rgba(139, 0, 0, 0.04)',
+                }
+              }}
             >
               Retour
             </Button>
@@ -974,11 +1023,19 @@ const Postuler = () => {
                   type="submit"
                   variant="contained"
                   disabled={isSubmitting}
-                  startIcon={isSubmitting ? <CircularProgress size={20} /> : <CloudDoneIcon />}
+                  startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CloudDoneIcon />}
                   sx={{ 
                     background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
                     color: 'white',
-                    minWidth: 140,
+                    minWidth: isMobile ? 130 : 150,
+                    fontWeight: 600,
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
+                    },
+                    '&.Mui-disabled': {
+                      background: '#e0e0e0',
+                      color: '#9e9e9e',
+                    }
                   }}
                 >
                   {isSubmitting ? 'Soumission...' : 'Soumettre'}
@@ -991,7 +1048,11 @@ const Postuler = () => {
                   sx={{ 
                     background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
                     color: 'black',
-                    minWidth: 120,
+                    minWidth: isMobile ? 110 : 130,
+                    fontWeight: 600,
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
+                    }
                   }}
                 >
                   Continuer
@@ -1003,7 +1064,7 @@ const Postuler = () => {
           {/* Progress Indicator */}
           <Box sx={{ mt: 2, textAlign: 'center' }}>
             <Typography variant="caption" color="text.secondary">
-              Étape {activeStep + 1} sur {steps.length} • {Math.round(((activeStep + 1) / steps.length) * 100)}%
+              Étape {activeStep + 1} sur {steps.length} • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
             </Typography>
           </Box>
         </Box>
