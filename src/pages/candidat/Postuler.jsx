@@ -160,6 +160,7 @@ const Postuler = () => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [isDialogOpen, setIsDialogOpen] = useState(true);
   
   // ==================== FORM ====================
   const {
@@ -211,6 +212,7 @@ const Postuler = () => {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [shouldRender, setShouldRender] = useState(false);
   
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -238,8 +240,15 @@ const Postuler = () => {
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
-    onSuccess: () => setIsInitialLoad(false),
-    onError: () => setIsInitialLoad(false),
+    onSuccess: () => {
+      setIsInitialLoad(false);
+      // Delay rendering pour éviter les problèmes de DOM sur mobile
+      setTimeout(() => setShouldRender(true), 50);
+    },
+    onError: () => {
+      setIsInitialLoad(false);
+      setTimeout(() => setShouldRender(true), 50);
+    },
   });
 
   // Transformer les données d'éditions
@@ -268,13 +277,11 @@ const Postuler = () => {
     queryFn: async () => {
       if (!watchedEditionId) return [];
       try {
-        // Essayez d'abord la route candidat/categories
         const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`);
         console.log('Catégories API response:', response.data);
         return response.data?.data || response.data || [];
       } catch (error) {
         console.error('Erreur chargement catégories:', error);
-        // Fallback: essayer l'autre route
         try {
           const fallbackResponse = await axiosInstance.get(`/categories/edition/${watchedEditionId}`);
           return fallbackResponse.data?.data || fallbackResponse.data || [];
@@ -325,13 +332,16 @@ const Postuler = () => {
     },
     onSuccess: (data) => {
       toast.success('🎉 Candidature soumise avec succès !');
-      navigate('/candidat/mes-candidatures', {
-        state: { 
-          success: true, 
-          candidateId: data.data?.id,
-          message: 'Votre candidature a été soumise avec succès.' 
-        }
-      });
+      setIsDialogOpen(false);
+      setTimeout(() => {
+        navigate('/candidat/mes-candidatures', {
+          state: { 
+            success: true, 
+            candidateId: data.data?.id,
+            message: 'Votre candidature a été soumise avec succès.' 
+          }
+        });
+      }, 100);
     },
     onError: (error) => {
       console.error('Mutation error:', error);
@@ -344,7 +354,10 @@ const Postuler = () => {
       if (error.response?.status === 422 && errorData?.errors) {
         setErrors(errorData.errors);
         toast.error('Veuillez corriger les erreurs dans le formulaire');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Utiliser requestAnimationFrame pour éviter les problèmes de DOM
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
       } else if (error.response?.status === 413) {
         toast.error('Fichiers trop volumineux. Veuillez réduire leur taille.');
       } else if (error.code === 'ECONNABORTED') {
@@ -385,21 +398,33 @@ const Postuler = () => {
     // Pré-remplir l'édition depuis l'URL
     const params = new URLSearchParams(location.search);
     const editionId = params.get('edition');
-    if (editionId && editions.length > 0 && !watchedEditionId) {
+    if (editionId && editions.length > 0 && !watchedEditionId && shouldRender) {
       const editionIdNum = parseInt(editionId);
       const edition = editions.find(e => e.id === editionIdNum);
       if (edition) {
-        setValue('edition_id', edition.id, { shouldValidate: true });
+        requestAnimationFrame(() => {
+          setValue('edition_id', edition.id, { shouldValidate: true });
+        });
       }
     }
-  }, [location.search, editions, watchedEditionId, setValue]);
+  }, [location.search, editions, watchedEditionId, setValue, shouldRender]);
 
   // Reset category quand l'édition change
   useEffect(() => {
-    if (watchedEditionId && getValues('category_id')) {
-      setValue('category_id', '', { shouldValidate: false });
+    if (watchedEditionId && getValues('category_id') && shouldRender) {
+      requestAnimationFrame(() => {
+        setValue('category_id', '', { shouldValidate: false });
+      });
     }
-  }, [watchedEditionId, setValue, getValues]);
+  }, [watchedEditionId, setValue, getValues, shouldRender]);
+
+  // Initial render delay pour éviter les problèmes de DOM
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShouldRender(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // ==================== HANDLERS ====================
   const handleNext = useCallback(async () => {
@@ -413,20 +438,27 @@ const Postuler = () => {
     if (isValid) {
       setActiveStep(prev => prev + 1);
       clearErrors();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
     }
   }, [activeStep, steps, trigger, clearErrors]);
 
   const handleBack = useCallback(() => {
     setActiveStep(prev => prev - 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   }, []);
 
   const handleClose = useCallback(() => {
     if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
       return;
     }
-    navigate('/');
+    setIsDialogOpen(false);
+    setTimeout(() => {
+      navigate('/');
+    }, 100);
   }, [isDirty, navigate]);
 
   const handlePhotoUpload = useCallback((event) => {
@@ -529,10 +561,12 @@ const Postuler = () => {
 
   // ==================== RENDER FUNCTIONS ====================
   const renderStepContent = () => {
+    if (!shouldRender) return null;
+    
     switch (activeStep) {
       case 0:
         return (
-          <Fade in timeout={300}>
+          <Fade in={shouldRender} timeout={300}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -755,7 +789,7 @@ const Postuler = () => {
 
       case 1:
         return (
-          <Zoom in timeout={300}>
+          <Zoom in={shouldRender} timeout={300}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -858,7 +892,7 @@ const Postuler = () => {
 
       case 2:
         return (
-          <Slide direction="left" in timeout={300}>
+          <Slide direction="left" in={shouldRender} timeout={300}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1113,7 +1147,7 @@ const Postuler = () => {
                                   <strong>Nom :</strong> {getCurrentEdition().nom}
                                 </Typography>
                               </Box>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Box sx={{ display: '-flex', alignItems: 'center', gap: 1 }}>
                                 <Typography variant="body2">
                                   <strong>Année :</strong> {getCurrentEdition().annee}
                                 </Typography>
@@ -1162,7 +1196,7 @@ const Postuler = () => {
 
       case 3:
         return (
-          <Collapse in timeout={300}>
+          <Collapse in={shouldRender} timeout={300}>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1354,7 +1388,7 @@ const Postuler = () => {
 
   return (
     <Dialog
-      open={true}
+      open={isDialogOpen}
       onClose={handleClose}
       maxWidth="md"
       fullWidth
@@ -1366,7 +1400,12 @@ const Postuler = () => {
           borderRadius: isMobile ? 0 : 2,
           overflow: 'hidden',
           background: 'white',
+          display: shouldRender ? 'flex' : 'none',
         }
+      }}
+      TransitionProps={{
+        timeout: 300,
+        onEntered: () => setShouldRender(true),
       }}
     >
       {/* Header */}
@@ -1374,7 +1413,8 @@ const Postuler = () => {
         background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
         padding: isMobile ? '20px 16px' : '24px 32px',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        minHeight: isMobile ? 'auto' : '180px',
       }}>
         <Box sx={{ 
           display: 'flex', 
@@ -1400,24 +1440,24 @@ const Postuler = () => {
               }}
             >
               <img 
-                      src="/logo.png" 
-                      alt="Logo" 
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.style.display = 'none';
-                        const parent = e.target.parentElement;
-                        parent.innerHTML = `
-                          <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
-                            SYT
-                          </span>
-                        `;
-                      }}
-                    />
+                src="/logo.png" 
+                alt="Logo" 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                }}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.style.display = 'none';
+                  const parent = e.target.parentElement;
+                  parent.innerHTML = `
+                    <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
+                      SYT
+                    </span>
+                  `;
+                }}
+              />
             </Box>
             <Box>
               <Typography
