@@ -17,6 +17,9 @@ import {
   Select,
   MenuItem,
   Typography,
+  Stepper,
+  Step,
+  StepLabel,
   LinearProgress,
   Alert,
   Grid,
@@ -31,10 +34,11 @@ import {
   Chip,
   Paper,
   Stack,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogActions,
   Backdrop,
-  Stepper,
-  Step,
-  StepLabel,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -163,7 +167,9 @@ const Postuler = () => {
     setValue,
     trigger,
     clearErrors,
-    formState: { errors: formErrors, isDirty },
+    reset,
+    getValues,
+    formState: { errors: formErrors, isDirty, isValid },
   } = useForm({
     resolver: yupResolver(schema),
     mode: 'onChange',
@@ -189,7 +195,9 @@ const Postuler = () => {
 
   // Watched values
   const watchedEditionId = watch('edition_id');
+  const watchedCategoryId = watch('category_id');
   const descriptionValue = watch('description_talent') || '';
+  const videoUrlValue = watch('video_url');
 
   // ==================== STATES ====================
   const [activeStep, setActiveStep] = useState(0);
@@ -200,41 +208,20 @@ const Postuler = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [stepTransition, setStepTransition] = useState(false);
   
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
-
-  // ==================== STEPS CONFIG ====================
-  const steps = useMemo(() => [
-    { 
-      label: 'Informations personnelles', 
-      icon: <PersonIcon />, 
-      fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] 
-    },
-    { 
-      label: 'Informations académiques', 
-      icon: <SchoolIcon />, 
-      fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] 
-    },
-    { 
-      label: 'Choix de l\'édition', 
-      icon: <TrophyIcon />, 
-      fields: ['edition_id', 'category_id'] 
-    },
-    { 
-      label: 'Présentation du talent', 
-      icon: <VideoIcon />, 
-      fields: ['video_url', 'description_talent'] 
-    },
-  ], []);
+  const formRef = useRef(null);
+  const stepTimeoutRef = useRef(null);
 
   // ==================== QUERIES OPTIMISÉES ====================
   const { 
     data: editionsData = [], 
     isLoading: editionsLoading,
     error: editionsError,
+    isFetching: editionsFetching,
   } = useQuery({
     queryKey: ['editions-ouvertes'],
     queryFn: async () => {
@@ -244,12 +231,15 @@ const Postuler = () => {
         return Array.isArray(data) ? data : [];
       } catch (error) {
         console.error('Erreur chargement éditions:', error);
-        return [];
+        throw new Error('Impossible de charger les éditions. Veuillez réessayer.');
       }
     },
     retry: 1,
     staleTime: 5 * 60 * 1000,
-    onSettled: () => setIsLoading(false),
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    onSuccess: () => setIsInitialLoad(false),
+    onError: () => setIsInitialLoad(false),
   });
 
   // Transformer les données d'éditions
@@ -271,21 +261,31 @@ const Postuler = () => {
   const { 
     data: categoriesData = [], 
     isLoading: categoriesLoading,
+    error: categoriesError,
+    isFetching: categoriesFetching,
   } = useQuery({
     queryKey: ['categories', watchedEditionId],
     queryFn: async () => {
       if (!watchedEditionId) return [];
       try {
         const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`);
+        console.log('Catégories API response:', response.data);
         return response.data?.data || response.data || [];
       } catch (error) {
         console.error('Erreur chargement catégories:', error);
-        return [];
+        try {
+          const fallbackResponse = await axiosInstance.get(`/categories/edition/${watchedEditionId}`);
+          return fallbackResponse.data?.data || fallbackResponse.data || [];
+        } catch (fallbackError) {
+          console.error('Fallback error:', fallbackError);
+          return [];
+        }
       }
     },
     enabled: !!watchedEditionId,
     retry: 1,
     staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   // Transformer les données de catégories
@@ -323,21 +323,13 @@ const Postuler = () => {
     },
     onSuccess: (data) => {
       toast.success('🎉 Candidature soumise avec succès !');
-      
-      // Nettoyer les previews
-      if (photoPreview) URL.revokeObjectURL(photoPreview);
-      if (videoPreview) URL.revokeObjectURL(videoPreview);
-      
-      setTimeout(() => {
-        navigate('/candidat/mes-candidatures', {
-          state: { 
-            success: true, 
-            candidateId: data.data?.id,
-            message: 'Votre candidature a été soumise avec succès.' 
-          },
-          replace: true
-        });
-      }, 100);
+      navigate('/candidat/mes-candidatures', {
+        state: { 
+          success: true, 
+          candidateId: data.data?.id,
+          message: 'Votre candidature a été soumise avec succès.' 
+        }
+      });
     },
     onError: (error) => {
       console.error('Mutation error:', error);
@@ -365,77 +357,96 @@ const Postuler = () => {
     },
   });
 
-  // ==================== FONCTIONS UTILITAIRES ====================
+  // ==================== FONCTIONS ====================
+  const steps = useMemo(() => [
+    { label: 'Informations personnelles', icon: <PersonIcon />, fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] },
+    { label: 'Informations académiques', icon: <SchoolIcon />, fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] },
+    { label: 'Choix de l\'édition', icon: <TrophyIcon />, fields: ['edition_id', 'category_id'] },
+    { label: 'Présentation du talent', icon: <VideoIcon />, fields: ['video_url', 'description_talent'] },
+  ], []);
+
   const getCurrentEdition = useCallback(() => {
     return editions?.find(e => e.id === watchedEditionId);
   }, [editions, watchedEditionId]);
+
+  const getCurrentCategory = useCallback(() => {
+    return categories?.find(c => c.id === watchedCategoryId);
+  }, [categories, watchedCategoryId]);
 
   const getStepError = useCallback(() => {
     const currentStepFields = steps[activeStep]?.fields || [];
     return currentStepFields.some(field => formErrors[field]);
   }, [activeStep, steps, formErrors]);
 
-  // ==================== HANDLERS SÉCURISÉS ====================
-  const handleNext = useCallback(async () => {
-    if (isTransitioning) return;
-    
-    setIsTransitioning(true);
-    
-    try {
-      const currentStepFields = steps[activeStep]?.fields || [];
-      if (currentStepFields.length === 0) {
-        setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
-        return;
+  // ==================== EFFECTS ====================
+  useEffect(() => {
+    // Pré-remplir l'édition depuis l'URL
+    const params = new URLSearchParams(location.search);
+    const editionId = params.get('edition');
+    if (editionId && editions.length > 0 && !watchedEditionId) {
+      const editionIdNum = parseInt(editionId);
+      const edition = editions.find(e => e.id === editionIdNum);
+      if (edition) {
+        setValue('edition_id', edition.id, { shouldValidate: true });
       }
-
-      const isValid = await trigger(currentStepFields);
-      if (isValid) {
-        // Petit délai pour éviter les conflits de rendu
-        await new Promise(resolve => setTimeout(resolve, 50));
-        setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
-        clearErrors();
-        
-        // Scroll en douceur
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-      }
-    } catch (error) {
-      console.error('Error in handleNext:', error);
-      toast.error('Erreur lors du changement d\'étape');
-    } finally {
-      setTimeout(() => setIsTransitioning(false), 100);
     }
-  }, [activeStep, steps, trigger, clearErrors, isTransitioning]);
+  }, [location.search, editions, watchedEditionId, setValue]);
+
+  // Reset category quand l'édition change
+  useEffect(() => {
+    if (watchedEditionId && getValues('category_id')) {
+      setValue('category_id', '', { shouldValidate: false });
+    }
+  }, [watchedEditionId, setValue, getValues]);
+
+  // Cleanup timeout
+  useEffect(() => {
+    return () => {
+      if (stepTimeoutRef.current) {
+        clearTimeout(stepTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // ==================== HANDLERS ====================
+  const handleNext = useCallback(async () => {
+    const currentStepFields = steps[activeStep]?.fields || [];
+    if (currentStepFields.length === 0) {
+      setStepTransition(true);
+      stepTimeoutRef.current = setTimeout(() => {
+        setActiveStep(prev => prev + 1);
+        setStepTransition(false);
+      }, 150);
+      return;
+    }
+
+    const isValid = await trigger(currentStepFields);
+    if (isValid) {
+      setStepTransition(true);
+      stepTimeoutRef.current = setTimeout(() => {
+        setActiveStep(prev => prev + 1);
+        clearErrors();
+        setStepTransition(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 150);
+    }
+  }, [activeStep, steps, trigger, clearErrors]);
 
   const handleBack = useCallback(() => {
-    if (isTransitioning || activeStep === 0) return;
-    
-    setIsTransitioning(true);
-    try {
-      setActiveStep(prev => Math.max(prev - 1, 0));
-      
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-    } catch (error) {
-      console.error('Error in handleBack:', error);
-    } finally {
-      setTimeout(() => setIsTransitioning(false), 100);
-    }
-  }, [activeStep, isTransitioning]);
+    setStepTransition(true);
+    stepTimeoutRef.current = setTimeout(() => {
+      setActiveStep(prev => prev - 1);
+      setStepTransition(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 150);
+  }, []);
 
   const handleClose = useCallback(() => {
     if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
       return;
     }
-    
-    // Nettoyer les previews
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    if (videoPreview) URL.revokeObjectURL(videoPreview);
-    
     navigate('/');
-  }, [isDirty, navigate, photoPreview, videoPreview]);
+  }, [isDirty, navigate]);
 
   const handlePhotoUpload = useCallback((event) => {
     const file = event.target.files?.[0];
@@ -451,18 +462,13 @@ const Postuler = () => {
       return;
     }
 
-    // Nettoyer ancienne preview
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-    }
-
     setPhotoFile(file);
     const reader = new FileReader();
     reader.onloadend = () => {
       setPhotoPreview(reader.result);
     };
     reader.readAsDataURL(file);
-  }, [photoPreview]);
+  }, []);
 
   const handleVideoUpload = useCallback((event) => {
     const file = event.target.files?.[0];
@@ -478,33 +484,25 @@ const Postuler = () => {
       return;
     }
 
-    // Nettoyer ancienne preview
-    if (videoPreview) {
-      URL.revokeObjectURL(videoPreview);
-    }
-
     setVideoFile(file);
     setValue('videoFile', file, { shouldValidate: true });
     
+    // Create preview URL
     const videoURL = URL.createObjectURL(file);
     setVideoPreview(videoURL);
-  }, [videoPreview, setValue]);
+  }, [setValue]);
 
-  const removePhoto = useCallback(() => {
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-    }
+  const removePhoto = useCallback((e) => {
+    e?.stopPropagation();
     setPhotoFile(null);
     setPhotoPreview('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [photoPreview]);
+  }, []);
 
-  const removeVideo = useCallback(() => {
-    if (videoPreview) {
-      URL.revokeObjectURL(videoPreview);
-    }
+  const removeVideo = useCallback((e) => {
+    e?.stopPropagation();
     setVideoFile(null);
     setVideoPreview('');
     setValue('video_url', '', { shouldValidate: false });
@@ -512,61 +510,53 @@ const Postuler = () => {
     if (videoInputRef.current) {
       videoInputRef.current.value = '';
     }
-  }, [videoPreview, setValue]);
+  }, [setValue]);
 
   const onSubmit = useCallback(async (data) => {
-    if (isSubmitting || isTransitioning) return;
-    
-    try {
-      // Validation finale
-      const isValid = await trigger();
-      if (!isValid) {
-        toast.error('Veuillez corriger les erreurs avant de soumettre');
-        return;
-      }
-
-      // Validation photo requise
-      if (!photoFile) {
-        toast.error('La photo de profil est requise');
-        return;
-      }
-
-      setUploadProgress(0);
-      setErrors({});
-      
-      const formData = new FormData();
-      
-      // Ajouter tous les champs
-      Object.keys(data).forEach(key => {
-        if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
-          formData.append(key, String(data[key]));
-        }
-      });
-      
-      // Ajouter les fichiers
-      if (photoFile) {
-        formData.append('photo', photoFile);
-      }
-      if (videoFile) {
-        formData.append('video', videoFile);
-      } else if (data.video_url) {
-        formData.append('video_url', data.video_url);
-      }
-
-      mutation.mutate(formData);
-    } catch (error) {
-      console.error('Error in onSubmit:', error);
-      toast.error('Erreur lors de la préparation du formulaire');
+    // Validation finale
+    const isValid = await trigger();
+    if (!isValid) {
+      toast.error('Veuillez corriger les erreurs avant de soumettre');
+      return;
     }
-  }, [photoFile, videoFile, trigger, mutation, isSubmitting, isTransitioning]);
+
+    if (!photoFile) {
+      toast.error('Veuillez ajouter une photo de profil');
+      return;
+    }
+
+    setUploadProgress(0);
+    setErrors({});
+    
+    const formData = new FormData();
+    
+    // Ajouter tous les champs
+    Object.keys(data).forEach(key => {
+      if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
+        formData.append(key, data[key]);
+      }
+    });
+    
+    // Ajouter les fichiers
+    if (photoFile) {
+      formData.append('photo', photoFile);
+    }
+    if (videoFile) {
+      formData.append('video', videoFile);
+    } else if (data.video_url) {
+      formData.append('video_url', data.video_url);
+    }
+
+    mutation.mutate(formData);
+  }, [photoFile, videoFile, trigger, mutation]);
 
   // ==================== RENDER FUNCTIONS ====================
   const renderStepContent = () => {
-    // Simple render sans animations complexes
+    // Simple rendering sans animations problématiques
     switch (activeStep) {
       case 0:
         return (
-          <Box sx={{ display: isTransitioning ? 'none' : 'block' }}>
+          <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
               mb: 3, 
@@ -587,6 +577,11 @@ const Postuler = () => {
                   borderRadius: 2,
                   border: '2px solid',
                   borderColor: photoPreview ? '#10B981' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                    boxShadow: 2,
+                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <Typography variant="subtitle2" sx={{ 
@@ -611,7 +606,11 @@ const Postuler = () => {
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        backgroundColor: photoPreview ? 'transparent' : alpha('#8B0000', 0.02),
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          borderColor: '#D4AF37',
+                          backgroundColor: alpha('#D4AF37', 0.02),
+                        }
                       }}
                       onClick={() => fileInputRef.current?.click()}
                     >
@@ -715,6 +714,12 @@ const Postuler = () => {
                                   {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
                                 </InputAdornment>
                               ) : undefined,
+                              sx: {
+                                borderRadius: 1,
+                                '& input': {
+                                  py: isMobile ? 1.25 : 1.5
+                                }
+                              }
                             }}
                           />
                         )}
@@ -732,6 +737,7 @@ const Postuler = () => {
                           <FormLabel sx={{ 
                             mb: 1,
                             fontWeight: 500,
+                            fontSize: isMobile ? '0.875rem' : '0.9375rem',
                             color: 'text.primary'
                           }}>
                             Sexe *
@@ -740,6 +746,12 @@ const Postuler = () => {
                             {...field}
                             displayEmpty
                             value={field.value || ''}
+                            sx={{ 
+                              borderRadius: 1,
+                              '& .MuiSelect-select': {
+                                py: isMobile ? 1.25 : 1.5
+                              }
+                            }}
                           >
                             <MenuItem value="" disabled>
                               Sélectionnez votre sexe
@@ -765,7 +777,7 @@ const Postuler = () => {
 
       case 1:
         return (
-          <Box sx={{ display: isTransitioning ? 'none' : 'block' }}>
+          <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
               mb: 3, 
@@ -802,6 +814,12 @@ const Postuler = () => {
                               {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
                             </InputAdornment>
                           ) : undefined,
+                          sx: {
+                            borderRadius: 1,
+                            '& input': {
+                              py: isMobile ? 1.25 : 1.5
+                            }
+                          }
                         }}
                       />
                     )}
@@ -819,6 +837,7 @@ const Postuler = () => {
                       <FormLabel sx={{ 
                         mb: 1,
                         fontWeight: 500,
+                        fontSize: isMobile ? '0.875rem' : '0.9375rem'
                       }}>
                         Année d'étude *
                       </FormLabel>
@@ -826,6 +845,12 @@ const Postuler = () => {
                         {...field}
                         displayEmpty
                         value={field.value || ''}
+                        sx={{ 
+                          borderRadius: 1,
+                          '& .MuiSelect-select': {
+                            py: isMobile ? 1.25 : 1.5
+                          }
+                        }}
                       >
                         <MenuItem value="" disabled>
                           Sélectionnez votre année
@@ -853,7 +878,7 @@ const Postuler = () => {
 
       case 2:
         return (
-          <Box sx={{ display: isTransitioning ? 'none' : 'block' }}>
+          <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
               mb: 3, 
@@ -889,6 +914,10 @@ const Postuler = () => {
                   borderRadius: 2,
                   border: '2px solid',
                   borderColor: formErrors.edition_id ? 'error.main' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <Controller
@@ -899,6 +928,7 @@ const Postuler = () => {
                           <FormLabel sx={{ 
                             mb: 1,
                             fontWeight: 600,
+                            fontSize: isMobile ? '0.875rem' : '0.9375rem',
                             color: 'text.primary'
                           }}>
                             Édition *
@@ -907,7 +937,13 @@ const Postuler = () => {
                             {...field}
                             displayEmpty
                             value={field.value || ''}
-                            disabled={editionsLoading}
+                            disabled={editionsLoading || editionsFetching}
+                            sx={{ 
+                              borderRadius: 1,
+                              '& .MuiSelect-select': {
+                                py: isMobile ? 1.25 : 1.5
+                              }
+                            }}
                           >
                             <MenuItem value="" disabled>
                               {editionsLoading ? (
@@ -944,7 +980,11 @@ const Postuler = () => {
                                       <Typography variant="caption" sx={{ 
                                         color: 'error.main',
                                         fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.5
                                       }}>
+                                        <TimeIcon fontSize="inherit" />
                                         Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
                                       </Typography>
                                     )}
@@ -973,6 +1013,10 @@ const Postuler = () => {
                     borderRadius: 2,
                     border: '2px solid',
                     borderColor: formErrors.category_id ? 'error.main' : 'divider',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      borderColor: '#D4AF37',
+                    }
                   }}>
                     <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                       <Controller
@@ -982,12 +1026,13 @@ const Postuler = () => {
                           <FormControl 
                             fullWidth 
                             error={!!fieldState.error || !!errors.category_id}
-                            disabled={categoriesLoading}
+                            disabled={categoriesLoading || categoriesError || categoriesFetching}
                           >
                             <FormLabel sx={{ 
                               mb: 1,
                               fontWeight: 600,
-                              color: categoriesLoading ? 'text.disabled' : 'text.primary'
+                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
+                              color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
                             }}>
                               Catégorie *
                             </FormLabel>
@@ -995,13 +1040,24 @@ const Postuler = () => {
                               {...field}
                               displayEmpty
                               value={field.value || ''}
-                              disabled={categoriesLoading}
+                              disabled={categoriesLoading || categoriesError || categoriesFetching}
+                              sx={{ 
+                                borderRadius: 1,
+                                '& .MuiSelect-select': {
+                                  py: isMobile ? 1.25 : 1.5
+                                }
+                              }}
                             >
                               <MenuItem value="" disabled>
-                                {categoriesLoading ? (
+                                {categoriesLoading || categoriesFetching ? (
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <CircularProgress size={16} />
                                     Chargement des catégories...
+                                  </Box>
+                                ) : categoriesError ? (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
+                                    <ErrorIcon fontSize="small" />
+                                    Erreur de chargement
                                   </Box>
                                 ) : categories.length === 0 ? (
                                   'Aucune catégorie disponible pour cette édition'
@@ -1040,13 +1096,91 @@ const Postuler = () => {
                   </Card>
                 </Grid>
               )}
+
+              {/* Détails édition */}
+              {getCurrentEdition() && (
+                <Grid item xs={12}>
+                  <Card sx={{ 
+                    borderRadius: 2,
+                    background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
+                    border: '1px solid rgba(212, 175, 55, 0.3)',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: 2,
+                    },
+                    transition: 'all 0.3s ease'
+                  }}>
+                    <CardContent>
+                      <Typography variant="subtitle2" sx={{ 
+                        fontWeight: 600, 
+                        mb: 2, 
+                        color: '#8B0000',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1
+                      }}>
+                        <InfoIcon fontSize="small" />
+                        Détails de l'édition sélectionnée
+                      </Typography>
+                      
+                      <Grid container spacing={isMobile ? 1 : 2}>
+                        <Grid item xs={12} md={6}>
+                          <Stack spacing={1}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <TrophyIcon sx={{ fontSize: 16, color: '#8B0000' }} />
+                              <Typography variant="body2">
+                                <strong>Nom :</strong> {getCurrentEdition().nom}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">
+                                <strong>Année :</strong> {getCurrentEdition().annee}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">
+                                <strong>Numéro :</strong> {getCurrentEdition().numero_edition}ème édition
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        </Grid>
+                        
+                        <Grid item xs={12} md={6}>
+                          <Stack spacing={1}>
+                            {getCurrentEdition().date_fin_inscriptions && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TimeIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                                <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 500 }}>
+                                  <strong>Clôture :</strong> {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}
+                                </Typography>
+                              </Box>
+                            )}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">
+                                <strong>Catégories :</strong> {categories?.length || 0} disponible(s)
+                              </Typography>
+                            </Box>
+                            {getCurrentCategory() && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 500 }}>
+                                  <strong>Votre choix :</strong> {getCurrentCategory()?.nom}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Stack>
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              )}
             </Grid>
           </Box>
         );
 
       case 3:
         return (
-          <Box sx={{ display: isTransitioning ? 'none' : 'block' }}>
+          <Box>
             <Typography variant="h6" sx={{ 
               fontWeight: 600, 
               mb: 3, 
@@ -1065,13 +1199,19 @@ const Postuler = () => {
                 <Card sx={{ 
                   borderRadius: 2,
                   border: '2px solid',
-                  borderColor: formErrors.video_url || formErrors.videoFile ? 'error.main' : 'divider',
+                  borderColor: videoPreview ? '#10B981' : 
+                            (formErrors.video_url || formErrors.videoFile) ? 'error.main' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
                       <FormLabel sx={{ 
                         mb: 1,
                         fontWeight: 600,
+                        fontSize: isMobile ? '0.875rem' : '0.9375rem'
                       }}>
                         Vidéo de présentation *
                       </FormLabel>
@@ -1095,6 +1235,12 @@ const Postuler = () => {
                                   <VideoIcon sx={{ color: '#8B0000' }} />
                                 </InputAdornment>
                               ),
+                              sx: {
+                                borderRadius: 1,
+                                '& input': {
+                                  py: isMobile ? 1.25 : 1.5
+                                }
+                              }
                             }}
                           />
                         )}
@@ -1117,6 +1263,10 @@ const Postuler = () => {
                   borderRadius: 2,
                   border: '2px solid',
                   borderColor: formErrors.description_talent ? 'error.main' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                  }
                 }}>
                   <CardContent sx={{ p: isMobile ? 2 : 3 }}>
                     <Controller
@@ -1152,11 +1302,20 @@ const Postuler = () => {
                                 }
                                 sx={{ 
                                   fontWeight: 500,
+                                  fontSize: '0.75rem'
                                 }}
                               />
                             </Box>
                           }
                           placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
+                          InputProps={{
+                            sx: {
+                              borderRadius: 1,
+                              '& textarea': {
+                                py: isMobile ? 1.25 : 1.5
+                              }
+                            }
+                          }}
                         />
                       )}
                     />
@@ -1173,7 +1332,7 @@ const Postuler = () => {
                     borderRadius: 2,
                   }}
                 >
-                  <Typography variant="body2">
+                  <Typography variant="body2" sx={{ fontSize: isMobile ? '0.875rem' : '1rem' }}>
                     <strong>Important :</strong> Votre candidature sera soumise pour validation. 
                     Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
                     Vérifiez bien toutes les informations avant de soumettre.
@@ -1190,348 +1349,393 @@ const Postuler = () => {
   };
 
   // ==================== RENDER ====================
-  if (isLoading) {
+  // Loading state initial
+  if (isInitialLoad && editionsLoading) {
     return (
-      <Box sx={{ 
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
-      }}>
-        <Box sx={{ textAlign: 'center', color: 'white', p: 3 }}>
-          <CircularProgress size={60} sx={{ color: 'white', mb: 3 }} />
-          <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
-            Chargement du formulaire...
-          </Typography>
-          <Typography variant="body2" sx={{ opacity: 0.8 }}>
-            Préparation de votre expérience de candidature
-          </Typography>
-        </Box>
-      </Box>
+      <Dialog open={true} maxWidth="md" fullWidth fullScreen={isMobile}>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+            <CircularProgress size={60} sx={{ color: '#8B0000', mb: 3 }} />
+            <Typography variant="h6" sx={{ color: '#8B0000', fontWeight: 600 }}>
+              Chargement du formulaire...
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1 }}>
+              Préparation de votre expérience de candidature
+            </Typography>
+          </Box>
+        </DialogContent>
+      </Dialog>
     );
   }
 
   return (
-    <Box sx={{ 
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
-    }}>
-      {/* Header fixe */}
-      <Paper sx={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 1000,
-        background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
-        color: 'white',
-        borderRadius: 0,
-        px: { xs: 2, md: 4 },
-        py: 2,
-        boxShadow: 3,
-      }}>
+    <>
+      <Backdrop
+        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
+        open={stepTransition}
+      >
+        <CircularProgress color="inherit" />
+      </Backdrop>
+      
+      <Dialog
+        open={true}
+        onClose={handleClose}
+        maxWidth="md"
+        fullWidth
+        fullScreen={isMobile}
+        PaperProps={{
+          sx: {
+            maxHeight: '100vh',
+            height: '100%',
+            borderRadius: isMobile ? 0 : 2,
+            overflow: 'hidden',
+            background: 'white',
+          }
+        }}
+      >
+        {/* Header */}
         <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
+          background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
+          padding: isMobile ? '20px 16px' : '24px 32px',
+          position: 'relative',
+          overflow: 'hidden'
         }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Box sx={{
-              width: 50,
-              height: 50,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #ffd700 0%, #D4AF37 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'hidden',
-              border: '2px solid white',
-            }}>
-              <img 
-                src="/logo.png" 
-                alt="Logo" 
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                }}
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.style.display = 'none';
-                  const parent = e.target.parentElement;
-                  parent.innerHTML = `
-                    <span style="color: white; font-size: 1rem; font-weight: bold;">
-                      SYT
-                    </span>
-                  `;
-                }}
-              />
-            </Box>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
-                Postuler à une édition
-              </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                Montrez votre talent au monde entier
-              </Typography>
-            </Box>
-          </Box>
-          
-          <IconButton
-            onClick={handleClose}
-            sx={{
-              color: 'white',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              },
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        {/* Stepper */}
-        <Box sx={{ mt: 2 }}>
-          <Stepper 
-            activeStep={activeStep} 
-            sx={{ 
-              '& .MuiStepConnector-root': {
-                top: 12
-              }
-            }}
-          >
-            {steps.map((step) => (
-              <Step key={step.label}>
-                <StepLabel 
-                  sx={{
-                    '& .MuiStepLabel-label': {
-                      color: 'rgba(255, 255, 255, 0.9)',
-                      fontWeight: 500,
-                      fontSize: isMobile ? '0.75rem' : '0.875rem',
-                      '&.Mui-active': {
-                        color: 'white',
-                        fontWeight: 600
-                      },
-                      '&.Mui-completed': {
-                        color: '#D4AF37'
-                      }
-                    }
-                  }}
-                >
-                  {step.label}
-                </StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-        </Box>
-
-        {/* Progress Bar */}
-        <LinearProgress 
-          variant="determinate" 
-          value={((activeStep + 1) / steps.length) * 100}
-          sx={{ 
-            height: 4, 
-            borderRadius: 2,
-            mt: 1,
-            background: 'rgba(255, 255, 255, 0.2)',
-            '& .MuiLinearProgress-bar': {
-              background: 'linear-gradient(90deg, #FFD700, #D4AF37)',
-              borderRadius: 2,
-            }
-          }}
-        />
-      </Paper>
-
-      {/* Main Content */}
-      <Container maxWidth="md" sx={{ py: { xs: 3, md: 4 } }}>
-        {/* Backdrop pendant les transitions */}
-        <Backdrop
-          open={isTransitioning}
-          sx={{
-            position: 'fixed',
-            zIndex: 999,
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-          }}
-        >
-          <CircularProgress size={40} sx={{ color: '#8B0000' }} />
-        </Backdrop>
-
-        {/* Progress d'upload */}
-        {isSubmitting && uploadProgress > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <LinearProgress 
-              variant="determinate" 
-              value={uploadProgress}
-              sx={{ 
-                height: 8, 
-                borderRadius: 4,
-                mb: 1,
-                '& .MuiLinearProgress-bar': {
-                  background: 'linear-gradient(90deg, #D4AF37, #FFD700)',
-                  borderRadius: 4,
-                }
-              }}
-            />
-            <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', display: 'block' }}>
-              Upload en cours... {uploadProgress}%
-            </Typography>
-          </Box>
-        )}
-
-        {/* Erreurs globales */}
-        {Object.keys(errors).length > 0 && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              mb: 3, 
-              borderRadius: 2,
-              boxShadow: 1,
-            }}
-            onClose={() => setErrors({})}
-          >
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              Veuillez corriger les erreurs suivantes :
-            </Typography>
-            <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
-              {Object.entries(errors).map(([field, messages]) => (
-                <li key={field}>
-                  <Typography variant="caption">
-                    {messages[0]}
-                  </Typography>
-                </li>
-              ))}
-            </Box>
-          </Alert>
-        )}
-
-        {/* Contenu du formulaire */}
-        <Box component="form" onSubmit={handleSubmit(onSubmit)}>
-          {renderStepContent()}
-
-          {/* Navigation buttons */}
           <Box sx={{ 
             display: 'flex', 
-            justifyContent: 'space-between', 
-            mt: 4,
-            pt: 3,
-            borderTop: '1px solid',
-            borderColor: 'divider',
-            gap: isMobile ? 1 : 2,
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mb: 2,
+            position: 'relative',
+            zIndex: 1
           }}>
-            <Button
-              onClick={handleBack}
-              disabled={activeStep === 0 || isSubmitting || isTransitioning}
-              startIcon={<ArrowBackIcon />}
-              variant="outlined"
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box
+                sx={{
+                  width: isMobile ? 50 : 60,
+                  height: isMobile ? 50 : 60,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #ffd700 0%, #D4AF37 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  border: '3px solid white',
+                  boxShadow: 2,
+                }}
+              >
+                <img 
+                  src="/logo.png" 
+                  alt="Logo" 
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.style.display = 'none';
+                    const parent = e.target.parentElement;
+                    parent.innerHTML = `
+                      <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
+                        SYT
+                      </span>
+                    `;
+                  }}
+                />
+              </Box>
+              <Box>
+                <Typography
+                  variant={isMobile ? "h5" : "h4"}
+                  sx={{
+                    fontWeight: 800,
+                    color: 'white',
+                    lineHeight: 1.2
+                  }}
+                >
+                  Postuler à une édition
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    mt: 0.5
+                }}
+                >
+                  Montrez votre talent au monde entier
+                </Typography>
+              </Box>
+            </Box>
+
+            <IconButton
+              onClick={handleClose}
+              size={isMobile ? "small" : "medium"}
               sx={{
-                color: '#8B0000',
-                borderColor: '#8B0000',
-                fontWeight: 600,
-                borderRadius: 2,
-                px: 3,
-                py: 1,
-                minWidth: 120,
+                color: 'white',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
                 '&:hover': {
-                  backgroundColor: 'rgba(139, 0, 0, 0.04)',
-                  borderColor: '#7a0000',
+                  backgroundColor: 'rgba(255, 255, 255, 0.3)',
                 },
-                '&.Mui-disabled': {
-                  borderColor: '#e5e7eb',
-                  color: '#9ca3af',
-                },
+                transition: 'all 0.2s ease',
               }}
             >
-              Retour
-            </Button>
-            
-            <Box sx={{ 
-              display: 'flex', 
-              gap: isMobile ? 1 : 2,
-            }}>
-              {activeStep === steps.length - 1 ? (
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={isSubmitting || getStepError() || isTransitioning || !photoFile}
-                  startIcon={isSubmitting ? 
-                    <CircularProgress size={20} color="inherit" /> : 
-                    <CloudDoneIcon />
-                  }
-                  sx={{
-                    background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
-                    color: 'white',
-                    fontWeight: 700,
-                    borderRadius: 2,
-                    px: 4,
-                    py: 1,
-                    minWidth: 180,
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
-                      boxShadow: 2,
-                    },
-                    '&:disabled': {
-                      background: '#e5e7eb',
-                      color: '#9ca3af',
-                    },
-                  }}
-                >
-                  {isSubmitting ? 'Soumission...' : 'Soumettre'}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleNext}
-                  variant="contained"
-                  endIcon={<ArrowForwardIcon />}
-                  disabled={getStepError() || isTransitioning}
-                  sx={{
-                    background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
-                    color: 'black',
-                    fontWeight: 700,
-                    borderRadius: 2,
-                    px: 4,
-                    py: 1,
-                    minWidth: 150,
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
-                      boxShadow: 2,
-                    },
-                    '&:disabled': {
-                      background: '#e5e7eb',
-                      color: '#9ca3af',
-                    },
-                  }}
-                >
-                  Continuer
-                </Button>
-              )}
-            </Box>
+              <CloseIcon fontSize={isMobile ? "small" : "medium"} />
+            </IconButton>
           </Box>
 
-          {/* Indicateur de progression */}
-          <Box sx={{ 
-            mt: 3, 
-            textAlign: 'center' 
-          }}>
-            <Typography variant="caption" sx={{ 
-              color: 'text.secondary',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 0.5
-            }}>
-              Étape {activeStep + 1} sur {steps.length}
-              <Box component="span" sx={{ 
-                color: '#8B0000', 
-                fontWeight: 600,
-                ml: 0.5
-              }}>
-                • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
-              </Box>
-            </Typography>
-          </Box>
+          {/* Progress Bar */}
+          <LinearProgress 
+            variant="determinate" 
+            value={((activeStep + 1) / steps.length) * 100}
+            sx={{ 
+              height: 4, 
+              borderRadius: 2,
+              background: 'rgba(255, 255, 255, 0.2)',
+              '& .MuiLinearProgress-bar': {
+                background: 'linear-gradient(90deg, #FFD700, #D4AF37)',
+                borderRadius: 2,
+              }
+            }}
+          />
+
+          {/* Stepper */}
+          {!isMobile && (
+            <Stepper 
+              activeStep={activeStep} 
+              sx={{ 
+                mt: 3,
+                '& .MuiStepConnector-root': {
+                  top: 12
+                }
+              }}
+            >
+              {steps.map((step) => (
+                <Step key={step.label}>
+                  <StepLabel 
+                    sx={{
+                      '& .MuiStepLabel-label': {
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        fontWeight: 500,
+                        '&.Mui-active': {
+                          color: 'white',
+                          fontWeight: 600
+                        },
+                        '&.Mui-completed': {
+                          color: '#D4AF37'
+                        }
+                      }
+                    }}
+                  >
+                    {step.label}
+                  </StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+          )}
         </Box>
-      </Container>
-    </Box>
+
+        {/* Content */}
+        <DialogContent sx={{ 
+          flex: 1,
+          overflow: 'auto',
+          p: isMobile ? 2 : 3,
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: '#f1f1f1',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#D4AF37',
+            borderRadius: '4px',
+            '&:hover': {
+              background: '#c19b2e',
+            }
+          }
+        }}>
+          {/* Progress d'upload */}
+          {isSubmitting && uploadProgress > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <LinearProgress 
+                variant="determinate" 
+                value={uploadProgress}
+                sx={{ 
+                  height: 8, 
+                  borderRadius: 4,
+                  mb: 1,
+                  '& .MuiLinearProgress-bar': {
+                    background: 'linear-gradient(90deg, #D4AF37, #FFD700)',
+                    borderRadius: 4,
+                  }
+                }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', display: 'block' }}>
+                Upload en cours... {uploadProgress}%
+              </Typography>
+            </Box>
+          )}
+
+          {/* Erreurs globales */}
+          {Object.keys(errors).length > 0 && (
+            <Alert 
+              severity="error" 
+              sx={{ 
+                mb: 3, 
+                borderRadius: 2
+              }}
+              onClose={() => setErrors({})}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                Veuillez corriger les erreurs suivantes :
+              </Typography>
+              <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
+                {Object.entries(errors).map(([field, messages]) => (
+                  <li key={field}>
+                    <Typography variant="caption">
+                      {messages[0]}
+                    </Typography>
+                  </li>
+                ))}
+              </Box>
+            </Alert>
+          )}
+
+          {/* Contenu du formulaire */}
+          <Box ref={formRef} component="form" onSubmit={handleSubmit(onSubmit)}>
+            {renderStepContent()}
+
+            {/* Navigation buttons */}
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              mt: 4,
+              pt: 3,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+              gap: isMobile ? 1 : 2,
+              flexWrap: 'wrap'
+            }}>
+              <Button
+                onClick={handleBack}
+                disabled={activeStep === 0 || isSubmitting}
+                startIcon={<ArrowBackIcon />}
+                variant="outlined"
+                sx={{
+                  color: '#8B0000',
+                  borderColor: '#8B0000',
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  px: isMobile ? 2 : 3,
+                  py: isMobile ? 0.75 : 1,
+                  minWidth: isMobile ? '100px' : '120px',
+                  '&:hover': {
+                    backgroundColor: 'rgba(139, 0, 0, 0.04)',
+                    borderColor: '#7a0000',
+                  },
+                  '&.Mui-disabled': {
+                    borderColor: '#e5e7eb',
+                    color: '#9ca3af',
+                  },
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Retour
+              </Button>
+              
+              <Box sx={{ 
+                display: 'flex', 
+                gap: isMobile ? 1 : 2,
+                flex: 1,
+                justifyContent: 'flex-end'
+              }}>
+                {activeStep === steps.length - 1 ? (
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={isSubmitting || getStepError() || !photoFile}
+                    startIcon={isSubmitting ? 
+                      <CircularProgress size={20} color="inherit" /> : 
+                      <CloudDoneIcon />
+                    }
+                    sx={{
+                      background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
+                      color: 'white',
+                      fontWeight: 700,
+                      borderRadius: 2,
+                      px: isMobile ? 3 : 6,
+                      py: isMobile ? 0.75 : 1,
+                      minWidth: isMobile ? '140px' : '180px',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
+                        boxShadow: 2,
+                      },
+                      '&.Mui-disabled': {
+                        background: '#e5e7eb',
+                        color: '#9ca3af',
+                      },
+                      transition: 'all 0.3s ease',
+                    }}
+                  >
+                    {isSubmitting ? 'Soumission...' : 'Soumettre'}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleNext}
+                    variant="contained"
+                    endIcon={<ArrowForwardIcon />}
+                    disabled={getStepError()}
+                    sx={{
+                      background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
+                      color: 'black',
+                      fontWeight: 700,
+                      borderRadius: 2,
+                      px: isMobile ? 3 : 6,
+                      py: isMobile ? 0.75 : 1,
+                      minWidth: isMobile ? '120px' : '150px',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
+                        boxShadow: 2,
+                      },
+                      '&.Mui-disabled': {
+                        background: '#e5e7eb',
+                        color: '#9ca3af',
+                      },
+                      transition: 'all 0.3s ease',
+                    }}
+                  >
+                    Continuer
+                  </Button>
+                )}
+              </Box>
+            </Box>
+
+            {/* Indicateur de progression */}
+            <Box sx={{ 
+              mt: 3, 
+              textAlign: 'center' 
+            }}>
+              <Typography variant="caption" sx={{ 
+                color: 'text.secondary',
+                fontSize: isMobile ? '0.75rem' : '0.875rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.5
+              }}>
+                Étape {activeStep + 1} sur {steps.length}
+                <Box component="span" sx={{ 
+                  color: '#8B0000', 
+                  fontWeight: 600,
+                  ml: 0.5
+                }}>
+                  • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
+                </Box>
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
