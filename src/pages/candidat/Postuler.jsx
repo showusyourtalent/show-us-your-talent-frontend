@@ -41,6 +41,8 @@ import {
   Dialog,
   DialogContent,
   Divider,
+  Backdrop,
+  GlobalStyles,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -65,6 +67,7 @@ import {
   LocationOn as LocationIcon,
   Language as LanguageIcon,
   CheckCircle as CheckIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 
 // ==================== SCHEMA DE VALIDATION ====================
@@ -211,10 +214,78 @@ const Postuler = () => {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [hasDomError, setHasDomError] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
   const formRef = useRef(null);
+  const stepContentRef = useRef(null);
+  const animationTimeoutRef = useRef(null);
+
+  // ==================== GESTION DES ERREURS GLOBALES ====================
+  useEffect(() => {
+    // Intercepter les erreurs non capturées
+    const handleGlobalError = (event) => {
+      if (event.error && event.error.message && event.error.message.includes('insertBefore')) {
+        event.preventDefault();
+        event.stopPropagation();
+        console.warn('DOM manipulation error caught:', event.error);
+        setHasDomError(true);
+        
+        // Réinitialiser les états d'animation
+        setIsTransitioning(false);
+        if (animationTimeoutRef.current) {
+          clearTimeout(animationTimeoutRef.current);
+        }
+        
+        // Réinitialiser les previews de fichiers
+        if (photoPreview) {
+          URL.revokeObjectURL(photoPreview);
+          setPhotoPreview('');
+        }
+        if (videoPreview) {
+          URL.revokeObjectURL(videoPreview);
+          setVideoPreview('');
+        }
+        
+        toast.error('Une erreur d\'affichage est survenue. Veuillez réessayer.');
+        
+        return false;
+      }
+    };
+
+    const handleUnhandledRejection = (event) => {
+      if (event.reason && event.reason.message && event.reason.message.includes('insertBefore')) {
+        event.preventDefault();
+        console.warn('Unhandled promise rejection:', event.reason);
+        setHasDomError(true);
+        return false;
+      }
+    };
+
+    window.addEventListener('error', handleGlobalError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleGlobalError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      
+      // Nettoyage des timeouts
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+      
+      // Nettoyage des URLs d'objets
+      if (photoPreview) {
+        URL.revokeObjectURL(photoPreview);
+      }
+      if (videoPreview) {
+        URL.revokeObjectURL(videoPreview);
+      }
+    };
+  }, [photoPreview, videoPreview]);
 
   // ==================== QUERIES OPTIMISÉES ====================
   const { 
@@ -222,24 +293,38 @@ const Postuler = () => {
     isLoading: editionsLoading,
     error: editionsError,
     isFetching: editionsFetching,
+    refetch: refetchEditions,
   } = useQuery({
     queryKey: ['editions-ouvertes'],
     queryFn: async () => {
       try {
-        const response = await axiosInstance.get('/candidat/editions-ouvertes');
+        const response = await axiosInstance.get('/candidat/editions-ouvertes', {
+          timeout: 15000,
+          signal: AbortSignal.timeout(15000)
+        });
         const data = response.data?.data || response.data || [];
         return Array.isArray(data) ? data : [];
       } catch (error) {
         console.error('Erreur chargement éditions:', error);
+        if (error.code === 'ECONNABORTED' || error.name === 'TimeoutError') {
+          throw new Error('Délai d\'attente dépassé. Vérifiez votre connexion internet.');
+        }
         throw new Error('Impossible de charger les éditions. Veuillez réessayer.');
       }
     },
-    retry: 1,
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
-    onSuccess: () => setIsInitialLoad(false),
-    onError: () => setIsInitialLoad(false),
+    onSuccess: () => {
+      setIsInitialLoad(false);
+      setHasDomError(false);
+    },
+    onError: () => {
+      setIsInitialLoad(false);
+      setHasDomError(true);
+    },
   });
 
   // Transformer les données d'éditions
@@ -263,36 +348,36 @@ const Postuler = () => {
     isLoading: categoriesLoading,
     error: categoriesError,
     isFetching: categoriesFetching,
+    refetch: refetchCategories,
   } = useQuery({
     queryKey: ['categories', watchedEditionId],
     queryFn: async () => {
       if (!watchedEditionId) return [];
       try {
-        // Essayez d'abord la route candidat/categories
-        const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`);
+        const response = await axiosInstance.get(`/candidat/categories/${watchedEditionId}`, {
+          timeout: 10000,
+          signal: AbortSignal.timeout(10000)
+        });
         console.log('Catégories API response:', response.data);
         return response.data?.data || response.data || [];
       } catch (error) {
         console.error('Erreur chargement catégories:', error);
-        // Fallback: essayer l'autre route
-        try {
-          const fallbackResponse = await axiosInstance.get(`/categories/edition/${watchedEditionId}`);
-          return fallbackResponse.data?.data || fallbackResponse.data || [];
-        } catch (fallbackError) {
-          console.error('Fallback error:', fallbackError);
-          return [];
+        if (error.code === 'ECONNABORTED' || error.name === 'TimeoutError') {
+          throw new Error('Délai d\'attente dépassé lors du chargement des catégories.');
         }
+        throw new Error('Impossible de charger les catégories pour cette édition.');
       }
     },
-    enabled: !!watchedEditionId,
-    retry: 1,
+    enabled: !!watchedEditionId && !hasDomError,
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 
   // Transformer les données de catégories
   const categories = useMemo(() => {
-    if (categoriesLoading) return [];
+    if (categoriesLoading || hasDomError) return [];
     return Array.isArray(categoriesData) ? categoriesData.map(category => ({
       id: category.id || category.value || category._id,
       nom: category.nom || category.name || 'Catégorie sans nom',
@@ -301,57 +386,80 @@ const Postuler = () => {
       ordre_affichage: category.ordre_affichage || category.display_order || 0,
       active: category.active !== undefined ? category.active : true,
     })) : [];
-  }, [categoriesData, categoriesLoading]);
+  }, [categoriesData, categoriesLoading, hasDomError]);
 
   // ==================== MUTATION OPTIMISÉE ====================
   const mutation = useMutation({
     mutationFn: async (formData) => {
       setIsSubmitting(true);
-      const response = await axiosInstance.post('/candidat/postuler', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 60000,
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            setUploadProgress(percentCompleted);
-          }
-        },
-      });
-      return response.data;
+      setErrors({});
+      
+      try {
+        const response = await axiosInstance.post('/candidat/postuler', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 60000,
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percentCompleted = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total
+              );
+              setUploadProgress(percentCompleted);
+            }
+          },
+        });
+        return response.data;
+      } catch (error) {
+        // Gestion spécifique des erreurs
+        if (error.code === 'ECONNABORTED') {
+          throw new Error('La soumission a pris trop de temps. Veuillez vérifier votre connexion et réessayer.');
+        }
+        if (error.message === 'Network Error') {
+          throw new Error('Problème de connexion réseau. Veuillez vérifier votre connexion internet.');
+        }
+        throw error;
+      }
     },
     onSuccess: (data) => {
       toast.success('🎉 Candidature soumise avec succès !');
-      navigate('/candidat/mes-candidatures', {
-        state: { 
-          success: true, 
-          candidateId: data.data?.id,
-          message: 'Votre candidature a été soumise avec succès.' 
-        }
-      });
+      
+      // Nettoyage des URLs d'objets avant navigation
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      if (videoPreview) URL.revokeObjectURL(videoPreview);
+      
+      setTimeout(() => {
+        navigate('/candidat/mes-candidatures', {
+          state: { 
+            success: true, 
+            candidateId: data.data?.id,
+            message: 'Votre candidature a été soumise avec succès.' 
+          },
+          replace: true
+        });
+      }, 100);
     },
     onError: (error) => {
-      console.error('Mutation error:', error);
+      console.error('Mutation error details:', error);
       const errorData = error.response?.data;
-      const errorMessage = errorData?.message || 
-                          errorData?.error || 
-                          error.message || 
-                          'Erreur lors de la soumission';
+      let errorMessage = 'Erreur lors de la soumission de la candidature';
       
       if (error.response?.status === 422 && errorData?.errors) {
         setErrors(errorData.errors);
-        toast.error('Veuillez corriger les erreurs dans le formulaire');
+        errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else if (error.response?.status === 413) {
-        toast.error('Fichiers trop volumineux. Veuillez réduire leur taille.');
-      } else if (error.code === 'ECONNABORTED') {
-        toast.error('Délai d\'attente dépassé. Vérifiez votre connexion.');
-      } else {
-        toast.error(errorMessage);
+        errorMessage = 'Fichiers trop volumineux. La photo ne doit pas dépasser 5MB et la vidéo 100MB.';
+      } else if (error.response?.status === 429) {
+        errorMessage = 'Trop de tentatives. Veuillez patienter quelques instants avant de réessayer.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Session expirée. Veuillez vous reconnecter.';
+        setTimeout(() => navigate('/login'), 2000);
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+      
+      toast.error(errorMessage, { duration: 5000 });
     },
     onSettled: () => {
       setIsSubmitting(false);
@@ -361,10 +469,26 @@ const Postuler = () => {
 
   // ==================== FONCTIONS ====================
   const steps = useMemo(() => [
-    { label: 'Informations personnelles', icon: <PersonIcon />, fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] },
-    { label: 'Informations académiques', icon: <SchoolIcon />, fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] },
-    { label: 'Choix de l\'édition', icon: <TrophyIcon />, fields: ['edition_id', 'category_id'] },
-    { label: 'Présentation du talent', icon: <VideoIcon />, fields: ['video_url', 'description_talent'] },
+    { 
+      label: 'Informations personnelles', 
+      icon: <PersonIcon />, 
+      fields: ['nom', 'prenoms', 'email', 'date_naissance', 'sexe', 'telephone'] 
+    },
+    { 
+      label: 'Informations académiques', 
+      icon: <SchoolIcon />, 
+      fields: ['origine', 'ethnie', 'universite', 'filiere', 'annee_etude'] 
+    },
+    { 
+      label: 'Choix de l\'édition', 
+      icon: <TrophyIcon />, 
+      fields: ['edition_id', 'category_id'] 
+    },
+    { 
+      label: 'Présentation du talent', 
+      icon: <VideoIcon />, 
+      fields: ['video_url', 'description_talent'] 
+    },
   ], []);
 
   const getCurrentEdition = useCallback(() => {
@@ -376,9 +500,10 @@ const Postuler = () => {
   }, [categories, watchedCategoryId]);
 
   const getStepError = useCallback(() => {
+    if (hasDomError) return true;
     const currentStepFields = steps[activeStep]?.fields || [];
     return currentStepFields.some(field => formErrors[field]);
-  }, [activeStep, steps, formErrors]);
+  }, [activeStep, steps, formErrors, hasDomError]);
 
   // ==================== EFFECTS ====================
   useEffect(() => {
@@ -401,138 +526,310 @@ const Postuler = () => {
     }
   }, [watchedEditionId, setValue, getValues]);
 
-  // ==================== HANDLERS ====================
-  const handleNext = useCallback(async () => {
-    const currentStepFields = steps[activeStep]?.fields || [];
-    if (currentStepFields.length === 0) {
-      setActiveStep(prev => prev + 1);
-      return;
-    }
+  // Gestion des transitions d'étapes
+  useEffect(() => {
+    return () => {
+      // Nettoyage à la destruction du composant
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      if (videoPreview) URL.revokeObjectURL(videoPreview);
+    };
+  }, []);
 
-    const isValid = await trigger(currentStepFields);
-    if (isValid) {
-      setActiveStep(prev => prev + 1);
-      clearErrors();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+  // ==================== HANDLERS SÉCURISÉS ====================
+  const handleNext = useCallback(async () => {
+    if (isTransitioning || hasDomError) return;
+    
+    setIsTransitioning(true);
+    
+    try {
+      const currentStepFields = steps[activeStep]?.fields || [];
+      if (currentStepFields.length === 0) {
+        setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
+        return;
+      }
+
+      const isValid = await trigger(currentStepFields);
+      if (isValid) {
+        setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
+        clearErrors();
+        
+        // Attendre le prochain tick pour éviter les conflits de rendu
+        setTimeout(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setIsTransitioning(false);
+        }, 100);
+      } else {
+        setIsTransitioning(false);
+      }
+    } catch (error) {
+      console.error('Error in handleNext:', error);
+      setIsTransitioning(false);
+      setHasDomError(true);
+      toast.error('Erreur lors du changement d\'étape. Veuillez réessayer.');
     }
-  }, [activeStep, steps, trigger, clearErrors]);
+  }, [activeStep, steps, trigger, clearErrors, isTransitioning, hasDomError]);
 
   const handleBack = useCallback(() => {
-    setActiveStep(prev => prev - 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+    if (isTransitioning || hasDomError) return;
+    
+    setIsTransitioning(true);
+    try {
+      setActiveStep(prev => Math.max(prev - 1, 0));
+      
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsTransitioning(false);
+      }, 100);
+    } catch (error) {
+      console.error('Error in handleBack:', error);
+      setIsTransitioning(false);
+      setHasDomError(true);
+    }
+  }, [isTransitioning, hasDomError]);
 
   const handleClose = useCallback(() => {
     if (isDirty && !window.confirm('Voulez-vous vraiment quitter ? Les modifications non enregistrées seront perdues.')) {
       return;
     }
-    navigate('/');
-  }, [isDirty, navigate]);
+    
+    // Nettoyage avant fermeture
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    if (videoPreview) URL.revokeObjectURL(videoPreview);
+    
+    setIsDialogOpen(false);
+    setTimeout(() => {
+      navigate('/', { replace: true });
+    }, 300);
+  }, [isDirty, navigate, photoPreview, videoPreview]);
 
   const handlePhotoUpload = useCallback((event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
 
-    // Validation
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('La photo ne doit pas dépasser 5MB');
-      return;
-    }
-    if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type)) {
-      toast.error('Format non supporté. Utilisez JPG, PNG ou WebP');
-      return;
-    }
+      // Validation
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('La photo ne doit pas dépasser 5MB');
+        return;
+      }
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type)) {
+        toast.error('Format non supporté. Utilisez JPG, PNG ou WebP');
+        return;
+      }
 
-    setPhotoFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoPreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-  }, []);
+      // Nettoyer l'ancienne preview
+      if (photoPreview) {
+        URL.revokeObjectURL(photoPreview);
+      }
+
+      setPhotoFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        try {
+          setPhotoPreview(reader.result);
+        } catch (error) {
+          console.error('Error setting photo preview:', error);
+          toast.error('Erreur lors du chargement de la photo');
+        }
+      };
+      reader.onerror = () => {
+        toast.error('Erreur lors de la lecture du fichier');
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error in handlePhotoUpload:', error);
+      toast.error('Erreur lors de l\'upload de la photo');
+    }
+  }, [photoPreview]);
 
   const handleVideoUpload = useCallback((event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
 
-    // Validation
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('La vidéo ne doit pas dépasser 100MB');
-      return;
-    }
-    if (!['video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime'].includes(file.type)) {
-      toast.error('Format non supporté. Utilisez MP4, MOV, AVI ou WebM');
-      return;
-    }
+      // Validation
+      if (file.size > 100 * 1024 * 1024) {
+        toast.error('La vidéo ne doit pas dépasser 100MB');
+        return;
+      }
+      if (!['video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime'].includes(file.type)) {
+        toast.error('Format non supporté. Utilisez MP4, MOV, AVI ou WebM');
+        return;
+      }
 
-    setVideoFile(file);
-    setValue('videoFile', file, { shouldValidate: true });
-    
-    // Create preview URL
-    const videoURL = URL.createObjectURL(file);
-    setVideoPreview(videoURL);
-  }, [setValue]);
+      // Nettoyer l'ancienne preview
+      if (videoPreview) {
+        URL.revokeObjectURL(videoPreview);
+      }
+
+      setVideoFile(file);
+      setValue('videoFile', file, { shouldValidate: true });
+      
+      // Créer preview URL avec gestion d'erreur
+      try {
+        const videoURL = URL.createObjectURL(file);
+        setVideoPreview(videoURL);
+      } catch (error) {
+        console.error('Error creating video URL:', error);
+        toast.error('Erreur lors de la prévisualisation de la vidéo');
+      }
+    } catch (error) {
+      console.error('Error in handleVideoUpload:', error);
+      toast.error('Erreur lors de l\'upload de la vidéo');
+    }
+  }, [videoPreview, setValue]);
 
   const removePhoto = useCallback((e) => {
     e?.stopPropagation();
-    setPhotoFile(null);
-    setPhotoPreview('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    e?.preventDefault();
+    
+    try {
+      if (photoPreview) {
+        URL.revokeObjectURL(photoPreview);
+      }
+      setPhotoFile(null);
+      setPhotoPreview('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Error removing photo:', error);
     }
-  }, []);
+  }, [photoPreview]);
 
   const removeVideo = useCallback((e) => {
     e?.stopPropagation();
+    e?.preventDefault();
+    
+    try {
+      if (videoPreview) {
+        URL.revokeObjectURL(videoPreview);
+      }
+      setVideoFile(null);
+      setVideoPreview('');
+      setValue('video_url', '', { shouldValidate: false });
+      setValue('videoFile', null, { shouldValidate: true });
+      if (videoInputRef.current) {
+        videoInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Error removing video:', error);
+    }
+  }, [videoPreview, setValue]);
+
+  const handleRetry = useCallback(() => {
+    setHasDomError(false);
+    setIsInitialLoad(true);
+    
+    // Réinitialiser les états
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    if (videoPreview) URL.revokeObjectURL(videoPreview);
+    
+    setPhotoFile(null);
+    setPhotoPreview('');
     setVideoFile(null);
     setVideoPreview('');
-    setValue('video_url', '', { shouldValidate: false });
-    setValue('videoFile', null, { shouldValidate: true });
-    if (videoInputRef.current) {
-      videoInputRef.current.value = '';
+    setErrors({});
+    setUploadProgress(0);
+    setActiveStep(0);
+    
+    // Recharger les données
+    refetchEditions();
+    if (watchedEditionId) {
+      refetchCategories();
     }
-  }, [setValue]);
+  }, [photoPreview, videoPreview, watchedEditionId, refetchEditions, refetchCategories]);
 
   const onSubmit = useCallback(async (data) => {
-    // Validation finale
-    const isValid = await trigger();
-    if (!isValid) {
-      toast.error('Veuillez corriger les erreurs avant de soumettre');
-      return;
-    }
-
-    setUploadProgress(0);
-    setErrors({});
+    if (isSubmitting || hasDomError) return;
     
-    const formData = new FormData();
-    
-    // Ajouter tous les champs
-    Object.keys(data).forEach(key => {
-      if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
-        formData.append(key, data[key]);
+    try {
+      // Validation finale
+      const isValid = await trigger();
+      if (!isValid) {
+        toast.error('Veuillez corriger les erreurs avant de soumettre');
+        return;
       }
-    });
-    
-    // Ajouter les fichiers
-    if (photoFile) {
-      formData.append('photo', photoFile);
-    }
-    if (videoFile) {
-      formData.append('video', videoFile);
-    } else if (data.video_url) {
-      // Si URL vidéo fournie
-      formData.append('video_url', data.video_url);
-    }
 
-    mutation.mutate(formData);
-  }, [photoFile, videoFile, trigger, mutation]);
+      // Validation photo requise
+      if (!photoFile) {
+        toast.error('La photo de profil est requise');
+        return;
+      }
+
+      setUploadProgress(0);
+      setErrors({});
+      
+      const formData = new FormData();
+      
+      // Ajouter tous les champs
+      Object.keys(data).forEach(key => {
+        if (key !== 'videoFile' && data[key] !== undefined && data[key] !== null && data[key] !== '') {
+          formData.append(key, String(data[key]));
+        }
+      });
+      
+      // Ajouter les fichiers
+      if (photoFile) {
+        formData.append('photo', photoFile);
+      }
+      if (videoFile) {
+        formData.append('video', videoFile);
+      } else if (data.video_url) {
+        formData.append('video_url', data.video_url);
+      }
+
+      mutation.mutate(formData);
+    } catch (error) {
+      console.error('Error in onSubmit:', error);
+      toast.error('Erreur lors de la préparation du formulaire');
+    }
+  }, [photoFile, videoFile, trigger, mutation, isSubmitting, hasDomError]);
 
   // ==================== RENDER FUNCTIONS ====================
   const renderStepContent = () => {
+    // Si erreur DOM, afficher écran d'erreur
+    if (hasDomError) {
+      return (
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          minHeight: '400px',
+          textAlign: 'center',
+          p: 3
+        }}>
+          <ErrorIcon sx={{ fontSize: 64, color: 'error.main', mb: 3 }} />
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            Erreur d'affichage
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
+            Une erreur est survenue lors du chargement du formulaire.
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={handleRetry}
+            startIcon={<RefreshIcon />}
+            sx={{
+              background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
+              color: 'white',
+              fontWeight: 600,
+              borderRadius: 2,
+              px: 4,
+              py: 1.5
+            }}
+          >
+            Réessayer
+          </Button>
+        </Box>
+      );
+    }
+
     switch (activeStep) {
       case 0:
         return (
-          <Fade in timeout={300}>
+          <Fade in={!isTransitioning} timeout={300} unmountOnExit>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -755,7 +1052,7 @@ const Postuler = () => {
 
       case 1:
         return (
-          <Zoom in timeout={300}>
+          <Zoom in={!isTransitioning} timeout={300} unmountOnExit>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -858,7 +1155,7 @@ const Postuler = () => {
 
       case 2:
         return (
-          <Slide direction="left" in timeout={300}>
+          <Slide direction="left" in={!isTransitioning} timeout={300} unmountOnExit>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -918,7 +1215,7 @@ const Postuler = () => {
                               {...field}
                               displayEmpty
                               value={field.value || ''}
-                              disabled={editionsLoading || editionsFetching}
+                              disabled={editionsLoading || editionsFetching || hasDomError}
                               sx={{ 
                                 borderRadius: 1,
                                 '& .MuiSelect-select': {
@@ -1007,7 +1304,7 @@ const Postuler = () => {
                             <FormControl 
                               fullWidth 
                               error={!!fieldState.error || !!errors.category_id}
-                              disabled={categoriesLoading || categoriesError || categoriesFetching}
+                              disabled={categoriesLoading || categoriesError || categoriesFetching || hasDomError}
                             >
                               <FormLabel sx={{ 
                                 mb: 1,
@@ -1021,7 +1318,7 @@ const Postuler = () => {
                                 {...field}
                                 displayEmpty
                                 value={field.value || ''}
-                                disabled={categoriesLoading || categoriesError || categoriesFetching}
+                                disabled={categoriesLoading || categoriesError || categoriesFetching || hasDomError}
                                 sx={{ 
                                   borderRadius: 1,
                                   '& .MuiSelect-select': {
@@ -1162,7 +1459,7 @@ const Postuler = () => {
 
       case 3:
         return (
-          <Collapse in timeout={300}>
+          <Collapse in={!isTransitioning} timeout={300} unmountOnExit>
             <Box>
               <Typography variant="h6" sx={{ 
                 fontWeight: 600, 
@@ -1353,364 +1650,408 @@ const Postuler = () => {
   }
 
   return (
-    <Dialog
-      open={true}
-      onClose={handleClose}
-      maxWidth="md"
-      fullWidth
-      fullScreen={isMobile}
-      PaperProps={{
-        sx: {
-          maxHeight: '100vh',
-          height: '100%',
-          borderRadius: isMobile ? 0 : 2,
-          overflow: 'hidden',
-          background: 'white',
-        }
-      }}
-    >
-      {/* Header */}
-      <Box sx={{ 
-        background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
-        padding: isMobile ? '20px 16px' : '24px 32px',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          mb: 2,
-          position: 'relative',
-          zIndex: 1
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Box
-              sx={{
-                width: isMobile ? 50 : 60,
-                height: isMobile ? 50 : 60,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #ffd700 0%, #D4AF37 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                border: '3px solid white',
-                boxShadow: 2,
-              }}
-            >
-              <img 
-                      src="/logo.png" 
-                      alt="Logo" 
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.style.display = 'none';
-                        const parent = e.target.parentElement;
-                        parent.innerHTML = `
-                          <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
-                            SYT
-                          </span>
-                        `;
-                      }}
-                    />
-            </Box>
-            <Box>
-              <Typography
-                variant={isMobile ? "h5" : "h4"}
-                sx={{
-                  fontWeight: 800,
-                  color: 'white',
-                  lineHeight: 1.2
-                }}
-              >
-                Postuler à une édition
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  mt: 0.5
-                }}
-              >
-                Montrez votre talent au monde entier
-              </Typography>
-            </Box>
-          </Box>
-
-          <IconButton
-            onClick={handleClose}
-            size={isMobile ? "small" : "medium"}
-            sx={{
-              color: 'white',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              },
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <CloseIcon fontSize={isMobile ? "small" : "medium"} />
-          </IconButton>
-        </Box>
-
-        {/* Progress Bar */}
-        <LinearProgress 
-          variant="determinate" 
-          value={((activeStep + 1) / steps.length) * 100}
-          sx={{ 
-            height: 4, 
-            borderRadius: 2,
-            background: 'rgba(255, 255, 255, 0.2)',
-            '& .MuiLinearProgress-bar': {
-              background: 'linear-gradient(90deg, #FFD700, #D4AF37)',
-              borderRadius: 2,
-            }
-          }}
-        />
-
-        {/* Stepper */}
-        {!isMobile && (
-          <Stepper 
-            activeStep={activeStep} 
-            sx={{ 
-              mt: 3,
-              '& .MuiStepConnector-root': {
-                top: 12
-              }
-            }}
-          >
-            {steps.map((step) => (
-              <Step key={step.label}>
-                <StepLabel 
-                  sx={{
-                    '& .MuiStepLabel-label': {
-                      color: 'rgba(255, 255, 255, 0.9)',
-                      fontWeight: 500,
-                      '&.Mui-active': {
-                        color: 'white',
-                        fontWeight: 600
-                      },
-                      '&.Mui-completed': {
-                        color: '#D4AF37'
-                      }
-                    }
-                  }}
-                >
-                  {step.label}
-                </StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-        )}
-      </Box>
-
-      {/* Content */}
-      <DialogContent sx={{ 
-        flex: 1,
-        overflow: 'auto',
-        p: isMobile ? 2 : 3,
-        '&::-webkit-scrollbar': {
-          width: '8px',
-        },
-        '&::-webkit-scrollbar-track': {
-          background: '#f1f1f1',
-          borderRadius: '4px',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          background: '#D4AF37',
-          borderRadius: '4px',
-          '&:hover': {
-            background: '#c19b2e',
+    <>
+      {/* Styles globaux pour la sécurité */}
+      <GlobalStyles
+        styles={{
+          '*': {
+            boxSizing: 'border-box',
+          },
+          body: {
+            overflow: 'hidden',
+          },
+        }}
+      />
+      
+      {/* Backdrop pendant les transitions */}
+      <Backdrop
+        sx={{ 
+          color: '#fff', 
+          zIndex: theme.zIndex.drawer + 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)'
+        }}
+        open={isTransitioning}
+        invisible={!isMobile}
+      >
+        <CircularProgress color="inherit" />
+      </Backdrop>
+      
+      <Dialog
+        open={isDialogOpen}
+        onClose={handleClose}
+        maxWidth="md"
+        fullWidth
+        fullScreen={isMobile}
+        PaperProps={{
+          sx: {
+            maxHeight: '100vh',
+            height: '100%',
+            borderRadius: isMobile ? 0 : 2,
+            overflow: 'hidden',
+            background: 'white',
+            position: 'relative',
           }
-        }
-      }}>
-        {/* Progress d'upload */}
-        {isSubmitting && uploadProgress > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <LinearProgress 
-              variant="determinate" 
-              value={uploadProgress}
-              sx={{ 
-                height: 8, 
-                borderRadius: 4,
-                mb: 1,
-                '& .MuiLinearProgress-bar': {
-                  background: 'linear-gradient(90deg, #D4AF37, #FFD700)',
-                  borderRadius: 4,
-                }
-              }}
-            />
-            <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', display: 'block' }}>
-              Upload en cours... {uploadProgress}%
-            </Typography>
-          </Box>
-        )}
-
-        {/* Erreurs globales */}
-        {Object.keys(errors).length > 0 && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              mb: 3, 
-              borderRadius: 2
-            }}
-            onClose={() => setErrors({})}
-          >
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              Veuillez corriger les erreurs suivantes :
-            </Typography>
-            <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
-              {Object.entries(errors).map(([field, messages]) => (
-                <li key={field}>
-                  <Typography variant="caption">
-                    {messages[0]}
-                  </Typography>
-                </li>
-              ))}
-            </Box>
-          </Alert>
-        )}
-
-        {/* Contenu du formulaire */}
-        <Box ref={formRef} component="form" onSubmit={handleSubmit(onSubmit)}>
-          {renderStepContent()}
-
-          {/* Navigation buttons */}
+        }}
+        TransitionProps={{
+          timeout: 300,
+          unmountOnExit: true,
+          onExited: () => {
+            // Nettoyage après fermeture
+            if (photoPreview) URL.revokeObjectURL(photoPreview);
+            if (videoPreview) URL.revokeObjectURL(videoPreview);
+          }
+        }}
+      >
+        {/* Header */}
+        <Box sx={{ 
+          background: 'linear-gradient(135deg, #8B0000 0%, #c53030 100%)',
+          padding: isMobile ? '20px 16px' : '24px 32px',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
           <Box sx={{ 
             display: 'flex', 
-            justifyContent: 'space-between', 
-            mt: 4,
-            pt: 3,
-            borderTop: '1px solid',
-            borderColor: 'divider',
-            gap: isMobile ? 1 : 2,
-            flexWrap: 'wrap'
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mb: 2,
+            position: 'relative',
+            zIndex: 1
           }}>
-            <Button
-              onClick={handleBack}
-              disabled={activeStep === 0 || isSubmitting}
-              startIcon={<ArrowBackIcon />}
-              variant="outlined"
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box
+                sx={{
+                  width: isMobile ? 50 : 60,
+                  height: isMobile ? 50 : 60,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #ffd700 0%, #D4AF37 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  border: '3px solid white',
+                  boxShadow: 2,
+                }}
+              >
+                <img 
+                  src="/logo.png" 
+                  alt="Logo" 
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.style.display = 'none';
+                    const parent = e.target.parentElement;
+                    parent.innerHTML = `
+                      <span style="color: white; font-size: 1.2rem; font-weight: bold; text-align: center">
+                        SYT
+                      </span>
+                    `;
+                  }}
+                />
+              </Box>
+              <Box>
+                <Typography
+                  variant={isMobile ? "h5" : "h4"}
+                  sx={{
+                    fontWeight: 800,
+                    color: 'white',
+                    lineHeight: 1.2
+                  }}
+                >
+                  Postuler à une édition
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    mt: 0.5
+                  }}
+                >
+                  Montrez votre talent au monde entier
+                </Typography>
+              </Box>
+            </Box>
+
+            <IconButton
+              onClick={handleClose}
+              size={isMobile ? "small" : "medium"}
               sx={{
-                color: '#8B0000',
-                borderColor: '#8B0000',
-                fontWeight: 600,
-                borderRadius: 2,
-                px: isMobile ? 2 : 3,
-                py: isMobile ? 0.75 : 1,
-                minWidth: isMobile ? '100px' : '120px',
+                color: 'white',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
                 '&:hover': {
-                  backgroundColor: 'rgba(139, 0, 0, 0.04)',
-                  borderColor: '#7a0000',
-                },
-                '&.Mui-disabled': {
-                  borderColor: '#e5e7eb',
-                  color: '#9ca3af',
+                  backgroundColor: 'rgba(255, 255, 255, 0.3)',
                 },
                 transition: 'all 0.2s ease',
               }}
             >
-              Retour
-            </Button>
-            
-            <Box sx={{ 
-              display: 'flex', 
-              gap: isMobile ? 1 : 2,
-              flex: 1,
-              justifyContent: 'flex-end'
-            }}>
-              {activeStep === steps.length - 1 ? (
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={isSubmitting || getStepError()}
-                  startIcon={isSubmitting ? 
-                    <CircularProgress size={20} color="inherit" /> : 
-                    <CloudDoneIcon />
-                  }
-                  sx={{
-                    background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
-                    color: 'white',
-                    fontWeight: 700,
-                    borderRadius: 2,
-                    px: isMobile ? 3 : 6,
-                    py: isMobile ? 0.75 : 1,
-                    minWidth: isMobile ? '140px' : '180px',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
-                      boxShadow: 2,
-                    },
-                    '&.Mui-disabled': {
-                      background: '#e5e7eb',
-                      color: '#9ca3af',
-                    },
-                    transition: 'all 0.3s ease',
-                  }}
-                >
-                  {isSubmitting ? 'Soumission...' : 'Soumettre'}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleNext}
-                  variant="contained"
-                  endIcon={<ArrowForwardIcon />}
-                  disabled={getStepError()}
-                  sx={{
-                    background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
-                    color: 'black',
-                    fontWeight: 700,
-                    borderRadius: 2,
-                    px: isMobile ? 3 : 6,
-                    py: isMobile ? 0.75 : 1,
-                    minWidth: isMobile ? '120px' : '150px',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
-                      boxShadow: 2,
-                    },
-                    '&.Mui-disabled': {
-                      background: '#e5e7eb',
-                      color: '#9ca3af',
-                    },
-                    transition: 'all 0.3s ease',
-                  }}
-                >
-                  Continuer
-                </Button>
-              )}
-            </Box>
+              <CloseIcon fontSize={isMobile ? "small" : "medium"} />
+            </IconButton>
           </Box>
 
-          {/* Indicateur de progression */}
-          <Box sx={{ 
-            mt: 3, 
-            textAlign: 'center' 
-          }}>
-            <Typography variant="caption" sx={{ 
-              color: 'text.secondary',
-              fontSize: isMobile ? '0.75rem' : '0.875rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 0.5
-            }}>
-              Étape {activeStep + 1} sur {steps.length}
-              <Box component="span" sx={{ 
-                color: '#8B0000', 
-                fontWeight: 600,
-                ml: 0.5
-              }}>
-                • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
-              </Box>
-            </Typography>
-          </Box>
+          {/* Progress Bar */}
+          <LinearProgress 
+            variant="determinate" 
+            value={hasDomError ? 100 : ((activeStep + 1) / steps.length) * 100}
+            sx={{ 
+              height: 4, 
+              borderRadius: 2,
+              background: 'rgba(255, 255, 255, 0.2)',
+              '& .MuiLinearProgress-bar': {
+                background: hasDomError ? '#ef4444' : 'linear-gradient(90deg, #FFD700, #D4AF37)',
+                borderRadius: 2,
+              }
+            }}
+          />
+
+          {/* Stepper */}
+          {!isMobile && !hasDomError && (
+            <Stepper 
+              activeStep={activeStep} 
+              sx={{ 
+                mt: 3,
+                '& .MuiStepConnector-root': {
+                  top: 12
+                }
+              }}
+            >
+              {steps.map((step) => (
+                <Step key={step.label}>
+                  <StepLabel 
+                    sx={{
+                      '& .MuiStepLabel-label': {
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        fontWeight: 500,
+                        '&.Mui-active': {
+                          color: 'white',
+                          fontWeight: 600
+                        },
+                        '&.Mui-completed': {
+                          color: '#D4AF37'
+                        }
+                      }
+                    }}
+                  >
+                    {step.label}
+                  </StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+          )}
         </Box>
-      </DialogContent>
-    </Dialog>
+
+        {/* Content */}
+        <DialogContent 
+          ref={stepContentRef}
+          sx={{ 
+            flex: 1,
+            overflow: 'auto',
+            p: isMobile ? 2 : 3,
+            '&::-webkit-scrollbar': {
+              width: '8px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#f1f1f1',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#D4AF37',
+              borderRadius: '4px',
+              '&:hover': {
+                background: '#c19b2e',
+              }
+            }
+          }}
+        >
+          {/* Progress d'upload */}
+          {isSubmitting && uploadProgress > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <LinearProgress 
+                variant="determinate" 
+                value={uploadProgress}
+                sx={{ 
+                  height: 8, 
+                  borderRadius: 4,
+                  mb: 1,
+                  '& .MuiLinearProgress-bar': {
+                    background: 'linear-gradient(90deg, #D4AF37, #FFD700)',
+                    borderRadius: 4,
+                  }
+                }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', display: 'block' }}>
+                Upload en cours... {uploadProgress}%
+              </Typography>
+            </Box>
+          )}
+
+          {/* Erreurs globales */}
+          {Object.keys(errors).length > 0 && (
+            <Alert 
+              severity="error" 
+              sx={{ 
+                mb: 3, 
+                borderRadius: 2
+              }}
+              onClose={() => setErrors({})}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                Veuillez corriger les erreurs suivantes :
+              </Typography>
+              <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
+                {Object.entries(errors).map(([field, messages]) => (
+                  <li key={field}>
+                    <Typography variant="caption">
+                      {messages[0]}
+                    </Typography>
+                  </li>
+                ))}
+              </Box>
+            </Alert>
+          )}
+
+          {/* Contenu du formulaire */}
+          <Box ref={formRef} component="form" onSubmit={handleSubmit(onSubmit)}>
+            {renderStepContent()}
+
+            {/* Navigation buttons */}
+            {!hasDomError && (
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                mt: 4,
+                pt: 3,
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                gap: isMobile ? 1 : 2,
+                flexWrap: 'wrap'
+              }}>
+                <Button
+                  onClick={handleBack}
+                  disabled={activeStep === 0 || isSubmitting || isTransitioning}
+                  startIcon={<ArrowBackIcon />}
+                  variant="outlined"
+                  sx={{
+                    color: '#8B0000',
+                    borderColor: '#8B0000',
+                    fontWeight: 600,
+                    borderRadius: 2,
+                    px: isMobile ? 2 : 3,
+                    py: isMobile ? 0.75 : 1,
+                    minWidth: isMobile ? '100px' : '120px',
+                    '&:hover': {
+                      backgroundColor: 'rgba(139, 0, 0, 0.04)',
+                      borderColor: '#7a0000',
+                    },
+                    '&.Mui-disabled': {
+                      borderColor: '#e5e7eb',
+                      color: '#9ca3af',
+                    },
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  Retour
+                </Button>
+                
+                <Box sx={{ 
+                  display: 'flex', 
+                  gap: isMobile ? 1 : 2,
+                  flex: 1,
+                  justifyContent: 'flex-end'
+                }}>
+                  {activeStep === steps.length - 1 ? (
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disabled={isSubmitting || getStepError() || isTransitioning || !photoFile}
+                      startIcon={isSubmitting ? 
+                        <CircularProgress size={20} color="inherit" /> : 
+                        <CloudDoneIcon />
+                      }
+                      sx={{
+                        background: 'linear-gradient(135deg, #8B0000 0%, #B22222 100%)',
+                        color: 'white',
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        px: isMobile ? 3 : 6,
+                        py: isMobile ? 0.75 : 1,
+                        minWidth: isMobile ? '140px' : '180px',
+                        '&:hover': {
+                          background: 'linear-gradient(135deg, #7a0000 0%, #a02020 100%)',
+                          boxShadow: 2,
+                        },
+                        '&.Mui-disabled': {
+                          background: '#e5e7eb',
+                          color: '#9ca3af',
+                        },
+                        transition: 'all 0.3s ease',
+                      }}
+                    >
+                      {isSubmitting ? 'Soumission...' : 'Soumettre'}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleNext}
+                      variant="contained"
+                      endIcon={<ArrowForwardIcon />}
+                      disabled={getStepError() || isTransitioning}
+                      sx={{
+                        background: 'linear-gradient(135deg, #D4AF37 0%, #FFD700 100%)',
+                        color: 'black',
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        px: isMobile ? 3 : 6,
+                        py: isMobile ? 0.75 : 1,
+                        minWidth: isMobile ? '120px' : '150px',
+                        '&:hover': {
+                          background: 'linear-gradient(135deg, #c19b2e 0%, #e6c200 100%)',
+                          boxShadow: 2,
+                        },
+                        '&.Mui-disabled': {
+                          background: '#e5e7eb',
+                          color: '#9ca3af',
+                        },
+                        transition: 'all 0.3s ease',
+                      }}
+                    >
+                      Continuer
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+            )}
+
+            {/* Indicateur de progression */}
+            {!hasDomError && (
+              <Box sx={{ 
+                mt: 3, 
+                textAlign: 'center' 
+              }}>
+                <Typography variant="caption" sx={{ 
+                  color: 'text.secondary',
+                  fontSize: isMobile ? '0.75rem' : '0.875rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0.5
+                }}>
+                  Étape {activeStep + 1} sur {steps.length}
+                  <Box component="span" sx={{ 
+                    color: '#8B0000', 
+                    fontWeight: 600,
+                    ml: 0.5
+                  }}>
+                    • {Math.round(((activeStep + 1) / steps.length) * 100)}% complété
+                  </Box>
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
