@@ -1614,10 +1614,10 @@ const CandidatsPage = () => {
           }
         >
           <Typography variant="h6" fontWeight="bold">
-            Erreur de chargement
+            Accès refusé
           </Typography>
           <Typography variant="body2">
-            {error}
+            Vous devez vous déconnectez pour accéder à cette page
           </Typography>
         </Alert>
       </Container>
