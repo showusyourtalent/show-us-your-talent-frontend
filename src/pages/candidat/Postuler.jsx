@@ -32,10 +32,6 @@ import {
   useTheme,
   alpha,
   Chip,
-  Fade,
-  Zoom,
-  Slide,
-  Collapse,
   Paper,
   Stack,
   Dialog,
@@ -354,10 +350,10 @@ const Postuler = () => {
       if (error.response?.status === 422 && errorData?.errors) {
         setErrors(errorData.errors);
         toast.error('Veuillez corriger les erreurs dans le formulaire');
-        // Utiliser requestAnimationFrame pour éviter les problèmes de DOM
-        requestAnimationFrame(() => {
+        // Utiliser setTimeout pour éviter les problèmes de DOM
+        setTimeout(() => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
+        }, 50);
       } else if (error.response?.status === 413) {
         toast.error('Fichiers trop volumineux. Veuillez réduire leur taille.');
       } else if (error.code === 'ECONNABORTED') {
@@ -402,9 +398,9 @@ const Postuler = () => {
       const editionIdNum = parseInt(editionId);
       const edition = editions.find(e => e.id === editionIdNum);
       if (edition) {
-        requestAnimationFrame(() => {
+        setTimeout(() => {
           setValue('edition_id', edition.id, { shouldValidate: true });
-        });
+        }, 50);
       }
     }
   }, [location.search, editions, watchedEditionId, setValue, shouldRender]);
@@ -412,9 +408,9 @@ const Postuler = () => {
   // Reset category quand l'édition change
   useEffect(() => {
     if (watchedEditionId && getValues('category_id') && shouldRender) {
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         setValue('category_id', '', { shouldValidate: false });
-      });
+      }, 50);
     }
   }, [watchedEditionId, setValue, getValues, shouldRender]);
 
@@ -438,17 +434,17 @@ const Postuler = () => {
     if (isValid) {
       setActiveStep(prev => prev + 1);
       clearErrors();
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
+      }, 50);
     }
   }, [activeStep, steps, trigger, clearErrors]);
 
   const handleBack = useCallback(() => {
     setActiveStep(prev => prev - 1);
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
+    }, 50);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -566,769 +562,167 @@ const Postuler = () => {
     switch (activeStep) {
       case 0:
         return (
-          <Fade in={shouldRender} timeout={300}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <PersonIcon /> Informations personnelles
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Photo Upload */}
-                <Grid item xs={12} md={4}>
-                  <Card sx={{ 
-                    height: '100%',
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: photoPreview ? '#10B981' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                      boxShadow: 2,
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Typography variant="subtitle2" sx={{ 
-                        mb: 2, 
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        color: 'text.primary'
-                      }}>
-                        Photo de profil *
-                      </Typography>
-                      
-                      <Box
-                        sx={{
-                          border: '2px dashed',
-                          borderColor: photoPreview ? '#10B981' : alpha(theme.palette.primary.main, 0.3),
-                          borderRadius: 2,
-                          p: isMobile ? 2 : 3,
-                          position: 'relative',
-                          cursor: 'pointer',
-                          minHeight: isMobile ? 160 : 200,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            borderColor: '#D4AF37',
-                            backgroundColor: alpha('#D4AF37', 0.02),
-                          }
-                        }}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handlePhotoUpload}
-                          ref={fileInputRef}
-                          style={{ display: 'none' }}
-                        />
-                        
-                        {photoPreview ? (
-                          <>
-                            <Avatar
-                              src={photoPreview}
-                              sx={{
-                                width: isMobile ? 100 : 120,
-                                height: isMobile ? 100 : 120,
-                                mb: 2,
-                                border: '3px solid #D4AF37',
-                                boxShadow: 1,
-                              }}
-                            />
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              onClick={removePhoto}
-                              startIcon={<DeleteIcon />}
-                              sx={{ 
-                                borderRadius: 1,
-                                textTransform: 'none',
-                                fontWeight: 500
-                              }}
-                            >
-                              Changer
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <CameraIcon sx={{ 
-                              fontSize: isMobile ? 40 : 48, 
-                              color: alpha(theme.palette.text.secondary, 0.5),
-                              mb: 2 
-                            }} />
-                            <Typography variant="body2" sx={{ 
-                              color: 'text.secondary',
-                              textAlign: 'center',
-                              mb: 1,
-                              fontWeight: 500
-                            }}>
-                              Cliquez pour uploader
-                            </Typography>
-                            <Typography variant="caption" sx={{ 
-                              color: 'text.secondary',
-                              textAlign: 'center',
-                              display: 'block'
-                            }}>
-                              JPG, PNG, WebP (max 5MB)
-                            </Typography>
-                          </>
-                        )}
-                      </Box>
-                      
-                      {errors.photo && (
-                        <Typography color="error" variant="caption" sx={{ mt: 1, display: 'block' }}>
-                          <ErrorIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
-                          {errors.photo[0]}
-                        </Typography>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Form Fields */}
-                <Grid item xs={12} md={8}>
-                  <Grid container spacing={isMobile ? 2 : 3}>
-                    {[
-                      { name: 'nom', label: 'Nom *', icon: <PersonIcon />, gridSize: 6 },
-                      { name: 'prenoms', label: 'Prénoms *', icon: null, gridSize: 6 },
-                      { name: 'email', label: 'Email *', icon: <EmailIcon />, gridSize: 12 },
-                      { name: 'telephone', label: 'Téléphone *', icon: <PhoneIcon />, gridSize: 6 },
-                      { name: 'date_naissance', label: 'Date de naissance *', icon: <CalendarIcon />, gridSize: 6, type: 'date' },
-                    ].map((field) => (
-                      <Grid item xs={12} sm={field.gridSize} key={field.name}>
-                        <Controller
-                          name={field.name}
-                          control={control}
-                          render={({ field: controllerField, fieldState }) => (
-                            <TextField
-                              {...controllerField}
-                              fullWidth
-                              label={field.label}
-                              type={field.type || 'text'}
-                              InputLabelProps={field.type === 'date' ? { shrink: true } : {}}
-                              error={!!fieldState.error || !!errors[field.name]}
-                              helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
-                              InputProps={{
-                                startAdornment: field.icon ? (
-                                  <InputAdornment position="start">
-                                    {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
-                                  </InputAdornment>
-                                ) : undefined,
-                                sx: {
-                                  borderRadius: 1,
-                                  '& input': {
-                                    py: isMobile ? 1.25 : 1.5
-                                  }
-                                }
-                              }}
-                            />
-                          )}
-                        />
-                      </Grid>
-                    ))}
-
-                    {/* Sexe */}
-                    <Grid item xs={12}>
-                      <Controller
-                        name="sexe"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <FormControl fullWidth error={!!fieldState.error || !!errors.sexe}>
-                            <FormLabel sx={{ 
-                              mb: 1,
-                              fontWeight: 500,
-                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                              color: 'text.primary'
-                            }}>
-                              Sexe *
-                            </FormLabel>
-                            <Select
-                              {...field}
-                              displayEmpty
-                              value={field.value || ''}
-                              sx={{ 
-                                borderRadius: 1,
-                                '& .MuiSelect-select': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }}
-                            >
-                              <MenuItem value="" disabled>
-                                Sélectionnez votre sexe
-                              </MenuItem>
-                              <MenuItem value="M">Masculin</MenuItem>
-                              <MenuItem value="F">Féminin</MenuItem>
-                            </Select>
-                            {(fieldState.error || errors.sexe) && (
-                              <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                {fieldState.error?.message || errors.sexe?.[0]}
-                              </Typography>
-                            )}
-                          </FormControl>
-                        )}
-                      />
-                    </Grid>
-                  </Grid>
-                </Grid>
-              </Grid>
-            </Box>
-          </Fade>
-        );
-
-      case 1:
-        return (
-          <Zoom in={shouldRender} timeout={300}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <SchoolIcon /> Informations académiques
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {[
-                  { name: 'origine', label: 'Ville/Région d\'origine *', icon: <LocationIcon />, gridSize: 6 },
-                  { name: 'ethnie', label: 'Ethnie (optionnel)', icon: <LanguageIcon />, gridSize: 6 },
-                  { name: 'universite', label: 'Université/École *', icon: <SchoolIcon />, gridSize: 12 },
-                  { name: 'filiere', label: 'Filière *', icon: null, gridSize: 8 },
-                ].map((field) => (
-                  <Grid item xs={12} sm={field.gridSize} key={field.name}>
-                    <Controller
-                      name={field.name}
-                      control={control}
-                      render={({ field: controllerField, fieldState }) => (
-                        <TextField
-                          {...controllerField}
-                          fullWidth
-                          label={field.label}
-                          error={!!fieldState.error || !!errors[field.name]}
-                          helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
-                          InputProps={{
-                            startAdornment: field.icon ? (
-                              <InputAdornment position="start">
-                                {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
-                              </InputAdornment>
-                            ) : undefined,
-                            sx: {
-                              borderRadius: 1,
-                              '& input': {
-                                py: isMobile ? 1.25 : 1.5
-                              }
-                            }
-                          }}
-                        />
-                      )}
-                    />
-                  </Grid>
-                ))}
-
-                {/* Année d'étude */}
-                <Grid item xs={12} sm={4}>
-                  <Controller
-                    name="annee_etude"
-                    control={control}
-                    render={({ field, fieldState }) => (
-                      <FormControl fullWidth error={!!fieldState.error || !!errors.annee_etude}>
-                        <FormLabel sx={{ 
-                          mb: 1,
-                          fontWeight: 500,
-                          fontSize: isMobile ? '0.875rem' : '0.9375rem'
-                        }}>
-                          Année d'étude *
-                        </FormLabel>
-                        <Select
-                          {...field}
-                          displayEmpty
-                          value={field.value || ''}
-                          sx={{ 
-                            borderRadius: 1,
-                            '& .MuiSelect-select': {
-                              py: isMobile ? 1.25 : 1.5
-                            }
-                          }}
-                        >
-                          <MenuItem value="" disabled>
-                            Sélectionnez votre année
-                          </MenuItem>
-                          <MenuItem value="Licence 1">Licence 1</MenuItem>
-                          <MenuItem value="Licence 2">Licence 2</MenuItem>
-                          <MenuItem value="Licence 3">Licence 3</MenuItem>
-                          <MenuItem value="Master 1">Master 1</MenuItem>
-                          <MenuItem value="Master 2">Master 2</MenuItem>
-                          <MenuItem value="Doctorat">Doctorat</MenuItem>
-                        </Select>
-                        {(fieldState.error || errors.annee_etude) && (
-                          <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                            <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                            {fieldState.error?.message || errors.annee_etude?.[0]}
-                          </Typography>
-                        )}
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
-              </Grid>
-            </Box>
-          </Zoom>
-        );
-
-      case 2:
-        return (
-          <Slide direction="left" in={shouldRender} timeout={300}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <TrophyIcon /> Choix de l'édition et catégorie
-              </Typography>
-              
-              <Alert 
-                severity="info" 
-                icon={<InfoIcon />}
-                sx={{ 
-                  mb: 3, 
+          <Box sx={{ opacity: shouldRender ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              mb: 3, 
+              color: '#8B0000',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontSize: isMobile ? '1.1rem' : '1.25rem'
+            }}>
+              <PersonIcon /> Informations personnelles
+            </Typography>
+            
+            <Grid container spacing={isMobile ? 2 : 3}>
+              {/* Photo Upload */}
+              <Grid item xs={12} md={4}>
+                <Card sx={{ 
+                  height: '100%',
                   borderRadius: 2,
-                }}
-              >
-                <Typography variant="body2">
-                  Sélectionnez l'édition à laquelle vous souhaitez participer et la catégorie correspondante.
-                  {getCurrentEdition()?.date_fin_inscriptions && (
-                    <> Les inscriptions se ferment le {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}.</>
-                  )}
-                </Typography>
-              </Alert>
-
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Édition */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.edition_id ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <Controller
-                        name="edition_id"
-                        control={control}
-                        render={({ field, fieldState }) => (
-                          <FormControl fullWidth error={!!fieldState.error || !!errors.edition_id}>
-                            <FormLabel sx={{ 
-                              mb: 1,
-                              fontWeight: 600,
-                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                              color: 'text.primary'
-                            }}>
-                              Édition *
-                            </FormLabel>
-                            <Select
-                              {...field}
-                              displayEmpty
-                              value={field.value || ''}
-                              disabled={editionsLoading || editionsFetching}
-                              sx={{ 
-                                borderRadius: 1,
-                                '& .MuiSelect-select': {
-                                  py: isMobile ? 1.25 : 1.5
-                                }
-                              }}
-                            >
-                              <MenuItem value="" disabled>
-                                {editionsLoading ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <CircularProgress size={16} />
-                                    Chargement des éditions...
-                                  </Box>
-                                ) : editionsError ? (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
-                                    <ErrorIcon fontSize="small" />
-                                    Erreur de chargement
-                                  </Box>
-                                ) : editions.length === 0 ? (
-                                  'Aucune édition ouverte aux inscriptions'
-                                ) : 'Sélectionnez une édition'}
-                              </MenuItem>
-                              {editions.map((edition) => (
-                                <MenuItem key={edition.id} value={edition.id}>
-                                  <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                                      {edition.nom}
-                                    </Typography>
-                                    <Box sx={{ 
-                                      display: 'flex', 
-                                      justifyContent: 'space-between',
-                                      mt: 0.5,
-                                      flexWrap: 'wrap',
-                                      gap: 1
-                                    }}>
-                                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                        {edition.annee} • {edition.numero_edition}ème édition
-                                      </Typography>
-                                      {edition.date_fin_inscriptions && (
-                                        <Typography variant="caption" sx={{ 
-                                          color: 'error.main',
-                                          fontWeight: 500,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: 0.5
-                                        }}>
-                                          <TimeIcon fontSize="inherit" />
-                                          Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
-                                        </Typography>
-                                      )}
-                                    </Box>
-                                  </Box>
-                                </MenuItem>
-                              ))}
-                            </Select>
-                            {(fieldState.error || errors.edition_id) && (
-                              <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                {fieldState.error?.message || errors.edition_id?.[0]}
-                              </Typography>
-                            )}
-                          </FormControl>
-                        )}
+                  border: '2px solid',
+                  borderColor: photoPreview ? '#10B981' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                    boxShadow: 2,
+                  }
+                }}>
+                  <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                    <Typography variant="subtitle2" sx={{ 
+                      mb: 2, 
+                      fontWeight: 600,
+                      textAlign: 'center',
+                      color: 'text.primary'
+                    }}>
+                      Photo de profil *
+                    </Typography>
+                    
+                    <Box
+                      sx={{
+                        border: '2px dashed',
+                        borderColor: photoPreview ? '#10B981' : alpha(theme.palette.primary.main, 0.3),
+                        borderRadius: 2,
+                        p: isMobile ? 2 : 3,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        minHeight: isMobile ? 160 : 200,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          borderColor: '#D4AF37',
+                          backgroundColor: alpha('#D4AF37', 0.02),
+                        }
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
                       />
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Catégorie */}
-                {watchedEditionId && (
-                  <Grid item xs={12}>
-                    <Card sx={{ 
-                      borderRadius: 2,
-                      border: '2px solid',
-                      borderColor: formErrors.category_id ? 'error.main' : 'divider',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        borderColor: '#D4AF37',
-                      }
-                    }}>
-                      <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                        <Controller
-                          name="category_id"
-                          control={control}
-                          render={({ field, fieldState }) => (
-                            <FormControl 
-                              fullWidth 
-                              error={!!fieldState.error || !!errors.category_id}
-                              disabled={categoriesLoading || categoriesError || categoriesFetching}
-                            >
-                              <FormLabel sx={{ 
-                                mb: 1,
-                                fontWeight: 600,
-                                fontSize: isMobile ? '0.875rem' : '0.9375rem',
-                                color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
-                              }}>
-                                Catégorie *
-                              </FormLabel>
-                              <Select
-                                {...field}
-                                displayEmpty
-                                value={field.value || ''}
-                                disabled={categoriesLoading || categoriesError || categoriesFetching}
-                                sx={{ 
-                                  borderRadius: 1,
-                                  '& .MuiSelect-select': {
-                                    py: isMobile ? 1.25 : 1.5
-                                  }
-                                }}
-                              >
-                                <MenuItem value="" disabled>
-                                  {categoriesLoading || categoriesFetching ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                      <CircularProgress size={16} />
-                                      Chargement des catégories...
-                                    </Box>
-                                  ) : categoriesError ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
-                                      <ErrorIcon fontSize="small" />
-                                      Erreur de chargement
-                                    </Box>
-                                  ) : categories.length === 0 ? (
-                                    'Aucune catégorie disponible pour cette édition'
-                                  ) : 'Sélectionnez une catégorie'}
-                                </MenuItem>
-                                {categories.map((category) => (
-                                  <MenuItem key={category.id} value={category.id}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                                      <CategoryIcon sx={{ mr: 2, color: '#8B0000' }} />
-                                      <Box sx={{ flex: 1 }}>
-                                        <Typography variant="body1">{category.nom}</Typography>
-                                        {category.description && (
-                                          <Typography variant="caption" sx={{ 
-                                            color: 'text.secondary',
-                                            display: 'block',
-                                            mt: 0.5
-                                          }}>
-                                            {category.description}
-                                          </Typography>
-                                        )}
-                                      </Box>
-                                    </Box>
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                              {(fieldState.error || errors.category_id) && (
-                                <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
-                                  <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                  {fieldState.error?.message || errors.category_id?.[0]}
-                                </Typography>
-                              )}
-                            </FormControl>
-                          )}
-                        />
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-
-                {/* Détails édition */}
-                {getCurrentEdition() && (
-                  <Grid item xs={12}>
-                    <Card sx={{ 
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
-                      border: '1px solid rgba(212, 175, 55, 0.3)',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: 2,
-                      },
-                      transition: 'all 0.3s ease'
-                    }}>
-                      <CardContent>
-                        <Typography variant="subtitle2" sx={{ 
-                          fontWeight: 600, 
-                          mb: 2, 
-                          color: '#8B0000',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1
-                        }}>
-                          <InfoIcon fontSize="small" />
-                          Détails de l'édition sélectionnée
-                        </Typography>
-                        
-                        <Grid container spacing={isMobile ? 1 : 2}>
-                          <Grid item xs={12} md={6}>
-                            <Stack spacing={1}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TrophyIcon sx={{ fontSize: 16, color: '#8B0000' }} />
-                                <Typography variant="body2">
-                                  <strong>Nom :</strong> {getCurrentEdition().nom}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: '-flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Année :</strong> {getCurrentEdition().annee}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Numéro :</strong> {getCurrentEdition().numero_edition}ème édition
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Grid>
-                          
-                          <Grid item xs={12} md={6}>
-                            <Stack spacing={1}>
-                              {getCurrentEdition().date_fin_inscriptions && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <TimeIcon sx={{ fontSize: 16, color: 'error.main' }} />
-                                  <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 500 }}>
-                                    <strong>Clôture :</strong> {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}
-                                  </Typography>
-                                </Box>
-                              )}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">
-                                  <strong>Catégories :</strong> {categories?.length || 0} disponible(s)
-                                </Typography>
-                              </Box>
-                              {getCurrentCategory() && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 500 }}>
-                                    <strong>Votre choix :</strong> {getCurrentCategory()?.nom}
-                                  </Typography>
-                                </Box>
-                              )}
-                            </Stack>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-              </Grid>
-            </Box>
-          </Slide>
-        );
-
-      case 3:
-        return (
-          <Collapse in={shouldRender} timeout={300}>
-            <Box>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 600, 
-                mb: 3, 
-                color: '#8B0000',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                fontSize: isMobile ? '1.1rem' : '1.25rem'
-              }}>
-                <VideoIcon /> Présentation de votre talent
-              </Typography>
-              
-              <Grid container spacing={isMobile ? 2 : 3}>
-                {/* Vidéo Upload */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: videoPreview ? '#10B981' : 
-                              (formErrors.video_url || formErrors.videoFile) ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                      <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
-                        <FormLabel sx={{ 
-                          mb: 1,
-                          fontWeight: 600,
-                          fontSize: isMobile ? '0.875rem' : '0.9375rem'
-                        }}>
-                          Vidéo de présentation *
-                        </FormLabel>
-                        
-                        <Controller
-                          name="video_url"
-                          control={control}
-                          render={({ field, fieldState }) => (
-                            <TextField
-                              fullWidth
-                              label="URL de vôtre vidéo"
-                              {...field}
-                              error={!!fieldState.error || !!errors.video_url}
-                              helperText={
-                                (fieldState.error?.message || errors.video_url?.[0]) || 
-                                "Lien Tiktok YouTube, Vimeo, ou autre plateforme"
-                              }
-                              InputProps={{
-                                startAdornment: (
-                                  <InputAdornment position="start">
-                                    <VideoIcon sx={{ color: '#8B0000' }} />
-                                  </InputAdornment>
-                                ),
-                                sx: {
-                                  borderRadius: 1,
-                                  '& input': {
-                                    py: isMobile ? 1.25 : 1.5
-                                  }
-                                }
-                              }}
-                            />
-                          )}
-                        />
-                        
-                        {(formErrors.video_url || formErrors.videoFile) && (
-                          <Typography color="error" variant="caption" sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
-                            <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
-                            {formErrors.video_url?.message || formErrors.videoFile?.message || 'Vidéo requise'}
+                      
+                      {photoPreview ? (
+                        <>
+                          <Avatar
+                            src={photoPreview}
+                            sx={{
+                              width: isMobile ? 100 : 120,
+                              height: isMobile ? 100 : 120,
+                              mb: 2,
+                              border: '3px solid #D4AF37',
+                              boxShadow: 1,
+                            }}
+                          />
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            onClick={removePhoto}
+                            startIcon={<DeleteIcon />}
+                            sx={{ 
+                              borderRadius: 1,
+                              textTransform: 'none',
+                              fontWeight: 500
+                            }}
+                          >
+                            Changer
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <CameraIcon sx={{ 
+                            fontSize: isMobile ? 40 : 48, 
+                            color: alpha(theme.palette.text.secondary, 0.5),
+                            mb: 2 
+                          }} />
+                          <Typography variant="body2" sx={{ 
+                            color: 'text.secondary',
+                            textAlign: 'center',
+                            mb: 1,
+                            fontWeight: 500
+                          }}>
+                            Cliquez pour uploader
                           </Typography>
-                        )}
-                      </FormControl>
-                    </CardContent>
-                  </Card>
-                </Grid>
+                          <Typography variant="caption" sx={{ 
+                            color: 'text.secondary',
+                            textAlign: 'center',
+                            display: 'block'
+                          }}>
+                            JPG, PNG, WebP (max 5MB)
+                          </Typography>
+                        </>
+                      )}
+                    </Box>
+                    
+                    {errors.photo && (
+                      <Typography color="error" variant="caption" sx={{ mt: 1, display: 'block' }}>
+                        <ErrorIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                        {errors.photo[0]}
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
 
-                {/* Description */}
-                <Grid item xs={12}>
-                  <Card sx={{ 
-                    borderRadius: 2,
-                    border: '2px solid',
-                    borderColor: formErrors.description_talent ? 'error.main' : 'divider',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      borderColor: '#D4AF37',
-                    }
-                  }}>
-                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+              {/* Form Fields */}
+              <Grid item xs={12} md={8}>
+                <Grid container spacing={isMobile ? 2 : 3}>
+                  {[
+                    { name: 'nom', label: 'Nom *', icon: <PersonIcon />, gridSize: 6 },
+                    { name: 'prenoms', label: 'Prénoms *', icon: null, gridSize: 6 },
+                    { name: 'email', label: 'Email *', icon: <EmailIcon />, gridSize: 12 },
+                    { name: 'telephone', label: 'Téléphone *', icon: <PhoneIcon />, gridSize: 6 },
+                    { name: 'date_naissance', label: 'Date de naissance *', icon: <CalendarIcon />, gridSize: 6, type: 'date' },
+                  ].map((field) => (
+                    <Grid item xs={12} sm={field.gridSize} key={field.name}>
                       <Controller
-                        name="description_talent"
+                        name={field.name}
                         control={control}
-                        render={({ field, fieldState }) => (
+                        render={({ field: controllerField, fieldState }) => (
                           <TextField
-                            {...field}
+                            {...controllerField}
                             fullWidth
-                            label="Description de votre talent *"
-                            multiline
-                            rows={isMobile ? 4 : 6}
-                            error={!!fieldState.error || !!errors.description_talent}
-                            helperText={
-                              <Box sx={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between',
-                                mt: 0.5,
-                                alignItems: 'center'
-                              }}>
-                                <span>
-                                  {fieldState.error?.message || errors.description_talent?.[0] || 
-                                   (field.value?.length < 100 
-                                     ? `Minimum ${100 - (field.value?.length || 0)} caractères restants` 
-                                     : 'Description suffisante')}
-                                </span>
-                                <Chip 
-                                  size="small"
-                                  label={`${field.value?.length || 0}/2000`}
-                                  color={
-                                    (field.value?.length || 0) > 2000 ? 'error' : 
-                                    (field.value?.length || 0) >= 100 ? 'success' : 'default'
-                                  }
-                                  sx={{ 
-                                    fontWeight: 500,
-                                    fontSize: '0.75rem'
-                                  }}
-                                />
-                              </Box>
-                            }
-                            placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
+                            label={field.label}
+                            type={field.type || 'text'}
+                            InputLabelProps={field.type === 'date' ? { shrink: true } : {}}
+                            error={!!fieldState.error || !!errors[field.name]}
+                            helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
                             InputProps={{
+                              startAdornment: field.icon ? (
+                                <InputAdornment position="start">
+                                  {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
+                                </InputAdornment>
+                              ) : undefined,
                               sx: {
                                 borderRadius: 1,
-                                '& textarea': {
+                                '& input': {
                                   py: isMobile ? 1.25 : 1.5
                                 }
                               }
@@ -1336,29 +730,623 @@ const Postuler = () => {
                           />
                         )}
                       />
+                    </Grid>
+                  ))}
+
+                  {/* Sexe */}
+                  <Grid item xs={12}>
+                    <Controller
+                      name="sexe"
+                      control={control}
+                      render={({ field, fieldState }) => (
+                        <FormControl fullWidth error={!!fieldState.error || !!errors.sexe}>
+                          <FormLabel sx={{ 
+                            mb: 1,
+                            fontWeight: 500,
+                            fontSize: isMobile ? '0.875rem' : '0.9375rem',
+                            color: 'text.primary'
+                          }}>
+                            Sexe *
+                          </FormLabel>
+                          <Select
+                            {...field}
+                            displayEmpty
+                            value={field.value || ''}
+                            sx={{ 
+                              borderRadius: 1,
+                              '& .MuiSelect-select': {
+                                py: isMobile ? 1.25 : 1.5
+                              }
+                            }}
+                          >
+                            <MenuItem value="" disabled>
+                              Sélectionnez votre sexe
+                            </MenuItem>
+                            <MenuItem value="M">Masculin</MenuItem>
+                            <MenuItem value="F">Féminin</MenuItem>
+                          </Select>
+                          {(fieldState.error || errors.sexe) && (
+                            <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                              <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                              {fieldState.error?.message || errors.sexe?.[0]}
+                            </Typography>
+                          )}
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
+                </Grid>
+              </Grid>
+            </Grid>
+          </Box>
+        );
+
+      case 1:
+        return (
+          <Box sx={{ opacity: shouldRender ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              mb: 3, 
+              color: '#8B0000',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontSize: isMobile ? '1.1rem' : '1.25rem'
+            }}>
+              <SchoolIcon /> Informations académiques
+            </Typography>
+            
+            <Grid container spacing={isMobile ? 2 : 3}>
+              {[
+                { name: 'origine', label: 'Ville/Région d\'origine *', icon: <LocationIcon />, gridSize: 6 },
+                { name: 'ethnie', label: 'Ethnie (optionnel)', icon: <LanguageIcon />, gridSize: 6 },
+                { name: 'universite', label: 'Université/École *', icon: <SchoolIcon />, gridSize: 12 },
+                { name: 'filiere', label: 'Filière *', icon: null, gridSize: 8 },
+              ].map((field) => (
+                <Grid item xs={12} sm={field.gridSize} key={field.name}>
+                  <Controller
+                    name={field.name}
+                    control={control}
+                    render={({ field: controllerField, fieldState }) => (
+                      <TextField
+                        {...controllerField}
+                        fullWidth
+                        label={field.label}
+                        error={!!fieldState.error || !!errors[field.name]}
+                        helperText={fieldState.error?.message || errors[field.name]?.[0] || ''}
+                        InputProps={{
+                          startAdornment: field.icon ? (
+                            <InputAdornment position="start">
+                              {React.cloneElement(field.icon, { sx: { color: '#8B0000' } })}
+                            </InputAdornment>
+                          ) : undefined,
+                          sx: {
+                            borderRadius: 1,
+                            '& input': {
+                              py: isMobile ? 1.25 : 1.5
+                            }
+                          }
+                        }}
+                      />
+                    )}
+                  />
+                </Grid>
+              ))}
+
+              {/* Année d'étude */}
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="annee_etude"
+                  control={control}
+                  render={({ field, fieldState }) => (
+                    <FormControl fullWidth error={!!fieldState.error || !!errors.annee_etude}>
+                      <FormLabel sx={{ 
+                        mb: 1,
+                        fontWeight: 500,
+                        fontSize: isMobile ? '0.875rem' : '0.9375rem'
+                      }}>
+                        Année d'étude *
+                      </FormLabel>
+                      <Select
+                        {...field}
+                        displayEmpty
+                        value={field.value || ''}
+                        sx={{ 
+                          borderRadius: 1,
+                          '& .MuiSelect-select': {
+                            py: isMobile ? 1.25 : 1.5
+                          }
+                        }}
+                      >
+                        <MenuItem value="" disabled>
+                          Sélectionnez votre année
+                        </MenuItem>
+                        <MenuItem value="Licence 1">Licence 1</MenuItem>
+                        <MenuItem value="Licence 2">Licence 2</MenuItem>
+                        <MenuItem value="Licence 3">Licence 3</MenuItem>
+                        <MenuItem value="Master 1">Master 1</MenuItem>
+                        <MenuItem value="Master 2">Master 2</MenuItem>
+                        <MenuItem value="Doctorat">Doctorat</MenuItem>
+                      </Select>
+                      {(fieldState.error || errors.annee_etude) && (
+                        <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                          <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                          {fieldState.error?.message || errors.annee_etude?.[0]}
+                        </Typography>
+                      )}
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        );
+
+      case 2:
+        return (
+          <Box sx={{ opacity: shouldRender ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              mb: 3, 
+              color: '#8B0000',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontSize: isMobile ? '1.1rem' : '1.25rem'
+            }}>
+              <TrophyIcon /> Choix de l'édition et catégorie
+            </Typography>
+            
+            <Alert 
+              severity="info" 
+              icon={<InfoIcon />}
+              sx={{ 
+                mb: 3, 
+                borderRadius: 2,
+              }}
+            >
+              <Typography variant="body2">
+                Sélectionnez l'édition à laquelle vous souhaitez participer et la catégorie correspondante.
+                {getCurrentEdition()?.date_fin_inscriptions && (
+                  <> Les inscriptions se ferment le {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}.</>
+                )}
+              </Typography>
+            </Alert>
+
+            <Grid container spacing={isMobile ? 2 : 3}>
+              {/* Édition */}
+              <Grid item xs={12}>
+                <Card sx={{ 
+                  borderRadius: 2,
+                  border: '2px solid',
+                  borderColor: formErrors.edition_id ? 'error.main' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                  }
+                }}>
+                  <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                    <Controller
+                      name="edition_id"
+                      control={control}
+                      render={({ field, fieldState }) => (
+                        <FormControl fullWidth error={!!fieldState.error || !!errors.edition_id}>
+                          <FormLabel sx={{ 
+                            mb: 1,
+                            fontWeight: 600,
+                            fontSize: isMobile ? '0.875rem' : '0.9375rem',
+                            color: 'text.primary'
+                          }}>
+                            Édition *
+                          </FormLabel>
+                          <Select
+                            {...field}
+                            displayEmpty
+                            value={field.value || ''}
+                            disabled={editionsLoading || editionsFetching}
+                            sx={{ 
+                              borderRadius: 1,
+                              '& .MuiSelect-select': {
+                                py: isMobile ? 1.25 : 1.5
+                              }
+                            }}
+                          >
+                            <MenuItem value="" disabled>
+                              {editionsLoading ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <CircularProgress size={16} />
+                                  Chargement des éditions...
+                                </Box>
+                              ) : editionsError ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
+                                  <ErrorIcon fontSize="small" />
+                                  Erreur de chargement
+                                </Box>
+                              ) : editions.length === 0 ? (
+                                'Aucune édition ouverte aux inscriptions'
+                              ) : 'Sélectionnez une édition'}
+                            </MenuItem>
+                            {editions.map((edition) => (
+                              <MenuItem key={edition.id} value={edition.id}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                  <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                                    {edition.nom}
+                                  </Typography>
+                                  <Box sx={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between',
+                                    mt: 0.5,
+                                    flexWrap: 'wrap',
+                                    gap: 1
+                                  }}>
+                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                      {edition.annee} • {edition.numero_edition}ème édition
+                                    </Typography>
+                                    {edition.date_fin_inscriptions && (
+                                      <Typography variant="caption" sx={{ 
+                                        color: 'error.main',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.5
+                                      }}>
+                                        <TimeIcon fontSize="inherit" />
+                                        Clôture: {new Date(edition.date_fin_inscriptions).toLocaleDateString('fr-FR')}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                </Box>
+                              </MenuItem>
+                            ))}
+                          </Select>
+                          {(fieldState.error || errors.edition_id) && (
+                            <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                              <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                              {fieldState.error?.message || errors.edition_id?.[0]}
+                            </Typography>
+                          )}
+                        </FormControl>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Catégorie */}
+              {watchedEditionId && (
+                <Grid item xs={12}>
+                  <Card sx={{ 
+                    borderRadius: 2,
+                    border: '2px solid',
+                    borderColor: formErrors.category_id ? 'error.main' : 'divider',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      borderColor: '#D4AF37',
+                    }
+                  }}>
+                    <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                      <Controller
+                        name="category_id"
+                        control={control}
+                        render={({ field, fieldState }) => (
+                          <FormControl 
+                            fullWidth 
+                            error={!!fieldState.error || !!errors.category_id}
+                            disabled={categoriesLoading || categoriesError || categoriesFetching}
+                          >
+                            <FormLabel sx={{ 
+                              mb: 1,
+                              fontWeight: 600,
+                              fontSize: isMobile ? '0.875rem' : '0.9375rem',
+                              color: categoriesLoading || categoriesError ? 'text.disabled' : 'text.primary'
+                            }}>
+                              Catégorie *
+                            </FormLabel>
+                            <Select
+                              {...field}
+                              displayEmpty
+                              value={field.value || ''}
+                              disabled={categoriesLoading || categoriesError || categoriesFetching}
+                              sx={{ 
+                                borderRadius: 1,
+                                '& .MuiSelect-select': {
+                                  py: isMobile ? 1.25 : 1.5
+                                }
+                              }}
+                            >
+                              <MenuItem value="" disabled>
+                                {categoriesLoading || categoriesFetching ? (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <CircularProgress size={16} />
+                                    Chargement des catégories...
+                                  </Box>
+                                ) : categoriesError ? (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
+                                    <ErrorIcon fontSize="small" />
+                                    Erreur de chargement
+                                  </Box>
+                                ) : categories.length === 0 ? (
+                                  'Aucune catégorie disponible pour cette édition'
+                                ) : 'Sélectionnez une catégorie'}
+                              </MenuItem>
+                              {categories.map((category) => (
+                                <MenuItem key={category.id} value={category.id}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                    <CategoryIcon sx={{ mr: 2, color: '#8B0000' }} />
+                                    <Box sx={{ flex: 1 }}>
+                                      <Typography variant="body1">{category.nom}</Typography>
+                                      {category.description && (
+                                        <Typography variant="caption" sx={{ 
+                                          color: 'text.secondary',
+                                          display: 'block',
+                                          mt: 0.5
+                                        }}>
+                                          {category.description}
+                                        </Typography>
+                                      )}
+                                    </Box>
+                                  </Box>
+                                </MenuItem>
+                              ))}
+                            </Select>
+                            {(fieldState.error || errors.category_id) && (
+                              <Typography color="error" variant="caption" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                {fieldState.error?.message || errors.category_id?.[0]}
+                              </Typography>
+                            )}
+                          </FormControl>
+                        )}
+                      />
                     </CardContent>
                   </Card>
                 </Grid>
+              )}
 
-                {/* Avertissement */}
+              {/* Détails édition */}
+              {getCurrentEdition() && (
                 <Grid item xs={12}>
-                  <Alert 
-                    severity="warning" 
-                    icon={<WarningIcon />}
-                    sx={{ 
-                      borderRadius: 2,
-                    }}
-                  >
-                    <Typography variant="body2" sx={{ fontSize: isMobile ? '0.875rem' : '1rem' }}>
-                      <strong>Important :</strong> Votre candidature sera soumise pour validation. 
-                      Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
-                      Vérifiez bien toutes les informations avant de soumettre.
-                    </Typography>
-                  </Alert>
+                  <Card sx={{ 
+                    borderRadius: 2,
+                    background: 'linear-gradient(135deg, rgba(139, 0, 0, 0.03) 0%, rgba(212, 175, 55, 0.03) 100%)',
+                    border: '1px solid rgba(212, 175, 55, 0.3)',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: 2,
+                    },
+                    transition: 'all 0.3s ease'
+                  }}>
+                    <CardContent>
+                      <Typography variant="subtitle2" sx={{ 
+                        fontWeight: 600, 
+                        mb: 2, 
+                        color: '#8B0000',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1
+                      }}>
+                        <InfoIcon fontSize="small" />
+                        Détails de l'édition sélectionnée
+                      </Typography>
+                      
+                      <Grid container spacing={isMobile ? 1 : 2}>
+                        <Grid item xs={12} md={6}>
+                          <Stack spacing={1}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <TrophyIcon sx={{ fontSize: 16, color: '#8B0000' }} />
+                              <Typography variant="body2">
+                                <strong>Nom :</strong> {getCurrentEdition().nom}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">
+                                <strong>Année :</strong> {getCurrentEdition().annee}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">
+                                <strong>Numéro :</strong> {getCurrentEdition().numero_edition}ème édition
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        </Grid>
+                        
+                        <Grid item xs={12} md={6}>
+                          <Stack spacing={1}>
+                            {getCurrentEdition().date_fin_inscriptions && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TimeIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                                <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 500 }}>
+                                  <strong>Clôture :</strong> {new Date(getCurrentEdition().date_fin_inscriptions).toLocaleDateString('fr-FR')}
+                                </Typography>
+                              </Box>
+                            )}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">
+                                <strong>Catégories :</strong> {categories?.length || 0} disponible(s)
+                              </Typography>
+                            </Box>
+                            {getCurrentCategory() && (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 500 }}>
+                                  <strong>Votre choix :</strong> {getCurrentCategory()?.nom}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Stack>
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
                 </Grid>
+              )}
+            </Grid>
+          </Box>
+        );
+
+      case 3:
+        return (
+          <Box sx={{ opacity: shouldRender ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              mb: 3, 
+              color: '#8B0000',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontSize: isMobile ? '1.1rem' : '1.25rem'
+            }}>
+              <VideoIcon /> Présentation de votre talent
+            </Typography>
+            
+            <Grid container spacing={isMobile ? 2 : 3}>
+              {/* Vidéo Upload */}
+              <Grid item xs={12}>
+                <Card sx={{ 
+                  borderRadius: 2,
+                  border: '2px solid',
+                  borderColor: videoPreview ? '#10B981' : 
+                            (formErrors.video_url || formErrors.videoFile) ? 'error.main' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                  }
+                }}>
+                  <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                    <FormControl fullWidth error={!!formErrors.video_url || !!formErrors.videoFile}>
+                      <FormLabel sx={{ 
+                        mb: 1,
+                        fontWeight: 600,
+                        fontSize: isMobile ? '0.875rem' : '0.9375rem'
+                      }}>
+                        Vidéo de présentation *
+                      </FormLabel>
+                      
+                      <Controller
+                        name="video_url"
+                        control={control}
+                        render={({ field, fieldState }) => (
+                          <TextField
+                            fullWidth
+                            label="URL de vôtre vidéo"
+                            {...field}
+                            error={!!fieldState.error || !!errors.video_url}
+                            helperText={
+                              (fieldState.error?.message || errors.video_url?.[0]) || 
+                              "Lien Tiktok YouTube, Vimeo, ou autre plateforme"
+                            }
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <VideoIcon sx={{ color: '#8B0000' }} />
+                                </InputAdornment>
+                              ),
+                              sx: {
+                                borderRadius: 1,
+                                '& input': {
+                                  py: isMobile ? 1.25 : 1.5
+                                }
+                              }
+                            }}
+                          />
+                        )}
+                      />
+                      
+                      {(formErrors.video_url || formErrors.videoFile) && (
+                        <Typography color="error" variant="caption" sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
+                          <ErrorIcon fontSize="small" sx={{ mr: 0.5 }} />
+                          {formErrors.video_url?.message || formErrors.videoFile?.message || 'Vidéo requise'}
+                        </Typography>
+                      )}
+                    </FormControl>
+                  </CardContent>
+                </Card>
               </Grid>
-            </Box>
-          </Collapse>
+
+              {/* Description */}
+              <Grid item xs={12}>
+                <Card sx={{ 
+                  borderRadius: 2,
+                  border: '2px solid',
+                  borderColor: formErrors.description_talent ? 'error.main' : 'divider',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    borderColor: '#D4AF37',
+                  }
+                }}>
+                  <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                    <Controller
+                      name="description_talent"
+                      control={control}
+                      render={({ field, fieldState }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Description de votre talent *"
+                          multiline
+                          rows={isMobile ? 4 : 6}
+                          error={!!fieldState.error || !!errors.description_talent}
+                          helperText={
+                            <Box sx={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between',
+                              mt: 0.5,
+                              alignItems: 'center'
+                            }}>
+                              <span>
+                                {fieldState.error?.message || errors.description_talent?.[0] || 
+                                 (field.value?.length < 100 
+                                   ? `Minimum ${100 - (field.value?.length || 0)} caractères restants` 
+                                   : 'Description suffisante')}
+                              </span>
+                              <Chip 
+                                size="small"
+                                label={`${field.value?.length || 0}/2000`}
+                                color={
+                                  (field.value?.length || 0) > 2000 ? 'error' : 
+                                  (field.value?.length || 0) >= 100 ? 'success' : 'default'
+                                }
+                                sx={{ 
+                                  fontWeight: 500,
+                                  fontSize: '0.75rem'
+                                }}
+                              />
+                            </Box>
+                          }
+                          placeholder="Décrivez votre talent, votre expérience, vos réalisations, vos ambitions..."
+                          InputProps={{
+                            sx: {
+                              borderRadius: 1,
+                              '& textarea': {
+                                py: isMobile ? 1.25 : 1.5
+                              }
+                            }
+                          }}
+                        />
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Avertissement */}
+              <Grid item xs={12}>
+                <Alert 
+                  severity="warning" 
+                  icon={<WarningIcon />}
+                  sx={{ 
+                    borderRadius: 2,
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontSize: isMobile ? '0.875rem' : '1rem' }}>
+                    <strong>Important :</strong> Votre candidature sera soumise pour validation. 
+                    Vous recevrez un email de confirmation une fois votre compte activé par les organisateurs.
+                    Vérifiez bien toutes les informations avant de soumettre.
+                  </Typography>
+                </Alert>
+              </Grid>
+            </Grid>
+          </Box>
         );
 
       default:
@@ -1400,12 +1388,10 @@ const Postuler = () => {
           borderRadius: isMobile ? 0 : 2,
           overflow: 'hidden',
           background: 'white',
-          display: shouldRender ? 'flex' : 'none',
         }
       }}
       TransitionProps={{
         timeout: 300,
-        onEntered: () => setShouldRender(true),
       }}
     >
       {/* Header */}
