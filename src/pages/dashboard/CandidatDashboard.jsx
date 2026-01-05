@@ -665,7 +665,7 @@ const CandidatDashboard = () => {
                       fontWeight: 'bold',
                       fontSize: { xs: '0.7rem', sm: '0.8rem' },
                     }}
-                  /
+                  />
                 </Stack>
               ) : (
                 <Button
@@ -1079,7 +1079,7 @@ const CandidatDashboard = () => {
                 {votesData?.stats && (
                   <Grid container spacing={1} sx={{ mb: 2 }}>
                     {[
-                      // erreur
+                      
                     ].map((stat, index) => (
                       <Grid item xs={6} sm={3} key={index}>
                         <Card sx={{ borderRadius: 2, height: '100%' }}>
