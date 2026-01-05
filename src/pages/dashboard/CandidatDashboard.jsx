@@ -489,16 +489,6 @@ const CandidatDashboard = () => {
   // Données de statistiques
   const statsCards = [
     {
-      title: 'Total des votes',
-      value: dashboardData?.global_stats?.total_votes || 0,
-      icon: <VoteIcon />,
-      color: PALETTE.SUCCESS,
-      label: 'Votes reçus',
-      subValue: formatCurrency(dashboardData?.global_stats?.total_amount || 0),
-      subLabel: 'Montant total',
-      onClick: () => setActiveTab(1),
-    },
-    {
       title: 'Candidatures actives',
       value: dashboardData?.global_stats?.active_candidatures || 0,
       icon: <PersonIcon />,
@@ -675,10 +665,7 @@ const CandidatDashboard = () => {
                       fontWeight: 'bold',
                       fontSize: { xs: '0.7rem', sm: '0.8rem' },
                     }}
-                  />
-                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                    {dashboardData.global_stats?.total_votes || 0} votes reçus
-                  </Typography>
+                  /
                 </Stack>
               ) : (
                 <Button
@@ -1092,10 +1079,7 @@ const CandidatDashboard = () => {
                 {votesData?.stats && (
                   <Grid container spacing={1} sx={{ mb: 2 }}>
                     {[
-                      { label: 'Votes totaux', value: votesData.stats.total_votes, color: PALETTE.SUCCESS },
-                      { label: 'Montant total', value: formatCurrency(votesData.stats.total_amount), color: PALETTE.GOLD },
-                      { label: 'Votants uniques', value: votesData.stats.unique_voters, color: PALETTE.INFO },
-                      { label: 'Paiements', value: votesData.stats.total_payments, color: PALETTE.PRIMARY },
+                      // erreur
                     ].map((stat, index) => (
                       <Grid item xs={6} sm={3} key={index}>
                         <Card sx={{ borderRadius: 2, height: '100%' }}>
