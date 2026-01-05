@@ -20,9 +20,6 @@ import {
   Divider,
   LinearProgress,
   IconButton,
-  Fade,
-  Zoom,
-  Slide,
   useTheme,
   useMediaQuery,
   TextField,
@@ -106,6 +103,10 @@ const PaymentPage = () => {
     lastname: ''
   });
   const [formErrors, setFormErrors] = useState({});
+
+  // Références pour suivre les états
+  const stepContainerRef = useRef(null);
+  const stepKeyRef = useRef(0);
 
   const voteOptions = [
     { value: 1, label: '1 vote - 100 XOF' },
@@ -245,6 +246,8 @@ const PaymentPage = () => {
 
       if (response.data.success) {
         setPaymentData(response.data.data);
+        // Incrémenter la clé pour forcer un nouveau rendu propre
+        stepKeyRef.current += 1;
         setActiveStep(1);
         setTimeLeft(1800); // Réinitialiser le timer
       } else {
@@ -287,7 +290,7 @@ const PaymentPage = () => {
         setLoading(false);
         return null;
     }
-};
+  };
 
   const processPayment = async () => {
     try {
@@ -386,6 +389,7 @@ const PaymentPage = () => {
       
       if (response.data.success) {
         setSuccess(true);
+        stepKeyRef.current += 1;
         setActiveStep(2);
         clearPolling();
         
@@ -411,6 +415,7 @@ const PaymentPage = () => {
     if (activeStep === 0) {
       navigate(-1);
     } else {
+      stepKeyRef.current += 1;
       setActiveStep(prev => prev - 1);
       clearPolling();
       if (fedapayWindow) {
@@ -434,10 +439,10 @@ const PaymentPage = () => {
   };
 
   const renderStepContent = (step) => {
-    switch (step) {
-      case 0:
-        return (
-          <Zoom in={true}>
+    const stepContent = (() => {
+      switch (step) {
+        case 0:
+          return (
             <Box>
               <Typography variant="h6" color={PALETTE.RED_DARK} gutterBottom fontWeight="bold">
                 Informations pour le vote
@@ -631,12 +636,10 @@ const PaymentPage = () => {
                 </Grid>
               </Grid>
             </Box>
-          </Zoom>
-        );
+          );
 
-      case 1:
-        return (
-          <Fade in={true}>
+        case 1:
+          return (
             <Box>
               <Box sx={{ 
                 display: 'flex', 
@@ -864,12 +867,10 @@ const PaymentPage = () => {
                 </Box>
               )}
             </Box>
-          </Fade>
-        );
+          );
 
-      case 2:
-        return (
-          <Slide direction="up" in={true}>
+        case 2:
+          return (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Box sx={{ 
                 width: 100, 
@@ -966,12 +967,15 @@ const PaymentPage = () => {
                 </Typography>
               </Box>
             </Box>
-          </Slide>
-        );
+          );
 
-      default:
-        return null;
-    }
+        default:
+          return null;
+      }
+    })();
+
+    // Retourner le contenu sans animations problématiques
+    return stepContent;
   };
 
   if (!candidat) {
@@ -993,11 +997,15 @@ const PaymentPage = () => {
 
   return (
     <>
-      <Container maxWidth="lg" sx={{ 
-        py: 4,
-        minHeight: '100vh',
-        background: `linear-gradient(135deg, ${PALETTE.WHITE} 0%, ${PALETTE.OR}05 100%)`
-      }}>
+      <Container 
+        maxWidth="lg" 
+        key={`container-${stepKeyRef.current}`}
+        sx={{ 
+          py: 4,
+          minHeight: '100vh',
+          background: `linear-gradient(135deg, ${PALETTE.WHITE} 0%, ${PALETTE.OR}05 100%)`
+        }}
+      >
         {/* En-tête avec stepper */}
         <Box sx={{ mb: 4 }}>
           <Button
@@ -1027,6 +1035,7 @@ const PaymentPage = () => {
           <Stepper 
             activeStep={activeStep} 
             alternativeLabel
+            key={`stepper-${stepKeyRef.current}`}
             sx={{ 
               mt: 3,
               '& .MuiStepLabel-label': {
@@ -1046,7 +1055,7 @@ const PaymentPage = () => {
             }}
           >
             {steps.map((label, index) => (
-              <Step key={label}>
+              <Step key={`step-${index}-${activeStep}-${stepKeyRef.current}`}>
                 <StepLabel>{label}</StepLabel>
               </Step>
             ))}
@@ -1056,12 +1065,15 @@ const PaymentPage = () => {
         {/* Contenu principal */}
         <Paper 
           elevation={0} 
+          key={`paper-${activeStep}-${stepKeyRef.current}`}
+          ref={stepContainerRef}
           sx={{ 
             p: { xs: 2, sm: 3, md: 4 },
             borderRadius: 3,
             border: `1px solid ${PALETTE.OR}20`,
             background: PALETTE.WHITE,
-            mb: 4
+            mb: 4,
+            minHeight: 400
           }}
         >
           {renderStepContent(activeStep)}
@@ -1152,11 +1164,15 @@ const PaymentPage = () => {
       <Dialog 
         open={showPaymentModal && fedapayWindow !== null} 
         onClose={() => setShowPaymentModal(false)}
+        disableRestoreFocus
       >
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6">Paiement en cours</Typography>
-            <IconButton onClick={() => setShowPaymentModal(false)}>
+            <IconButton 
+              onClick={() => setShowPaymentModal(false)}
+              size="small"
+            >
               <CloseIcon />
             </IconButton>
           </Box>
@@ -1180,6 +1196,7 @@ const PaymentPage = () => {
               }
               setShowPaymentModal(false);
             }}
+            variant="contained"
           >
             J'ai compris
           </Button>
@@ -1190,3 +1207,6 @@ const PaymentPage = () => {
 };
 
 export default PaymentPage;
+
+
+
