@@ -6,15 +6,10 @@ import {
   Box,
   Typography,
   Paper,
-  Stepper,
-  Step,
-  StepLabel,
   Button,
   CircularProgress,
   Alert,
   Grid,
-  Card,
-  CardContent,
   Avatar,
   Chip,
   Divider,
@@ -39,7 +34,6 @@ import {
 import {
   ArrowBack as ArrowBackIcon,
   CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
   Payment as PaymentIcon,
   PersonAdd as PersonAddIcon,
   Timer as TimerIcon,
@@ -47,10 +41,6 @@ import {
   PhoneAndroid as MobileIcon,
   Email as EmailIcon,
   Phone as PhoneIcon,
-  Person as PersonIcon,
-  Verified as VerifiedIcon,
-  School as SchoolIcon,
-  Groups as GroupsIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
 import axios from '../api/axios';
@@ -70,7 +60,6 @@ const PALETTE = {
   GRAY_DARK: '#333333',
 };
 
-const steps = ['Informations', 'Paiement', 'Confirmation'];
 const VOTE_PRICE = 100;
 
 const PaymentPage = () => {
@@ -88,7 +77,7 @@ const PaymentPage = () => {
   const [success, setSuccess] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('pending');
-  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
+  const [timeLeft, setTimeLeft] = useState(1800);
   const [votesCount, setVotesCount] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState('mobile_money');
   const [fedapayWindow, setFedapayWindow] = useState(null);
@@ -104,9 +93,8 @@ const PaymentPage = () => {
   });
   const [formErrors, setFormErrors] = useState({});
 
-  // Références pour suivre les états
   const stepContainerRef = useRef(null);
-  const stepKeyRef = useRef(0);
+  const stepKey = useRef(0);
 
   const voteOptions = [
     { value: 1, label: '1 vote - 100 XOF' },
@@ -157,7 +145,6 @@ const PaymentPage = () => {
         clearInterval(checkWindowClosed);
         setFedapayWindow(null);
         
-        // Vérifier le statut si on n'a pas encore reçu de message
         if (pollingActive && paymentData?.payment_token) {
           checkPaymentStatusAfterClose(paymentData.payment_token);
         }
@@ -246,10 +233,11 @@ const PaymentPage = () => {
 
       if (response.data.success) {
         setPaymentData(response.data.data);
-        // Incrémenter la clé pour forcer un nouveau rendu propre
-        stepKeyRef.current += 1;
-        setActiveStep(1);
-        setTimeLeft(1800); // Réinitialiser le timer
+        stepKey.current += 1;
+        setTimeout(() => {
+          setActiveStep(1);
+          setTimeLeft(1800);
+        }, 50);
       } else {
         setError(response.data.message || 'Erreur lors de l\'initialisation');
       }
@@ -261,8 +249,8 @@ const PaymentPage = () => {
   };
 
   const openFedapayWindow = (url) => {
-    const width = 500;
-    const height = 700;
+    const width = Math.min(500, window.screen.width - 40);
+    const height = Math.min(700, window.screen.height - 100);
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
 
@@ -274,11 +262,9 @@ const PaymentPage = () => {
         setFedapayWindow(newWindow);
         setShowPaymentModal(true);
         
-        // Vérifier périodiquement si la fenêtre est bloquée
-        const checkPopupBlocked = setTimeout(() => {
+        setTimeout(() => {
             if (newWindow.closed || newWindow.location.href === 'about:blank') {
-                console.log('Popup bloqué ou fermé');
-                setError('La fenêtre de paiement a été bloquée. Veuillez autoriser les popups.');
+                setError('Veuillez autoriser les popups pour procéder au paiement.');
                 setShowPaymentModal(false);
                 setLoading(false);
             }
@@ -303,15 +289,10 @@ const PaymentPage = () => {
       });
 
       if (response.data.success) {
-        // Ouvrir FedaPay dans une nouvelle fenêtre
         const windowRef = openFedapayWindow(response.data.data.redirect_url);
         
         if (windowRef) {
-          // Commencer à vérifier le statut
           startPaymentStatusCheck(paymentData.payment_token);
-        } else {
-          setError('Veuillez autoriser les popups pour procéder au paiement');
-          setLoading(false);
         }
       } else {
         setError(response.data.message || 'Erreur lors du traitement du paiement');
@@ -351,7 +332,6 @@ const PaymentPage = () => {
 
     setCheckInterval(interval);
 
-    // Arrêter le polling après 15 minutes
     setTimeout(() => {
       if (interval) {
         clearInterval(interval);
@@ -360,7 +340,7 @@ const PaymentPage = () => {
           setError('Délai d\'attente dépassé. Veuillez vérifier le statut de votre paiement.');
         }
       }
-    }, 900000); // 15 minutes
+    }, 900000);
   };
 
   const checkPaymentStatusAfterClose = async (paymentToken) => {
@@ -373,7 +353,7 @@ const PaymentPage = () => {
         
         if (is_successful) {
           handlePaymentSuccess(paymentToken);
-        } else if (status === 'cancelled' || status === 'failed' || status === 'expired') {
+        } else if (['cancelled', 'failed', 'expired'].includes(status)) {
           setError(`Le paiement a été ${status === 'cancelled' ? 'annulé' : 'échoué'}.`);
           setPollingActive(false);
         }
@@ -389,8 +369,10 @@ const PaymentPage = () => {
       
       if (response.data.success) {
         setSuccess(true);
-        stepKeyRef.current += 1;
-        setActiveStep(2);
+        stepKey.current += 1;
+        setTimeout(() => {
+          setActiveStep(2);
+        }, 50);
         clearPolling();
         
         setTimeout(() => {
@@ -415,12 +397,14 @@ const PaymentPage = () => {
     if (activeStep === 0) {
       navigate(-1);
     } else {
-      stepKeyRef.current += 1;
-      setActiveStep(prev => prev - 1);
+      stepKey.current += 1;
       clearPolling();
       if (fedapayWindow) {
         fedapayWindow.close();
       }
+      setTimeout(() => {
+        setActiveStep(prev => prev - 1);
+      }, 50);
     }
   };
 
@@ -438,545 +422,547 @@ const PaymentPage = () => {
     return `${candidat?.prenoms || ''} ${candidat?.nom || ''}`.trim();
   };
 
-  const renderStepContent = (step) => {
-    const stepContent = (() => {
-      switch (step) {
-        case 0:
-          return (
-            <Box>
-              <Typography variant="h6" color={PALETTE.RED_DARK} gutterBottom fontWeight="bold">
-                Informations pour le vote
+  // Rendu conditionnel par étape - Chaque étape est un composant séparé
+  const renderStepContent = () => {
+    // Nettoyer le conteneur avant de rendre
+    if (stepContainerRef.current) {
+      // Forcer un nettoyage
+      setTimeout(() => {
+        // Cette technique aide à éviter les conflits de DOM
+      }, 0);
+    }
+
+    switch (activeStep) {
+      case 0:
+        return <StepInformations />;
+      case 1:
+        return <StepPaiement />;
+      case 2:
+        return <StepConfirmation />;
+      default:
+        return null;
+    }
+  };
+
+  // Composant pour l'étape 1 - Informations
+  const StepInformations = React.memo(() => (
+    <Box key={`step-info-${stepKey.current}`}>
+      <Typography variant="h6" color={PALETTE.RED_DARK} gutterBottom fontWeight="bold">
+        Informations pour le vote
+      </Typography>
+      
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <Paper elevation={0} sx={{ 
+            p: 3, 
+            mb: 3, 
+            border: `1px solid ${PALETTE.OR}30`,
+            borderRadius: 2,
+            background: `${PALETTE.OR}08`,
+            height: '100%'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+              <Avatar 
+                src={candidat?.photo_url}
+                sx={{ 
+                  width: 80, 
+                  height: 80,
+                  border: `3px solid ${PALETTE.OR}`
+                }}
+              />
+              <Box>
+                <Typography variant="h6" fontWeight="bold" color={PALETTE.RED_DARK}>
+                  {formatNomComplet(candidat)}
+                </Typography>
+                <Chip 
+                  label={category?.nom || 'Catégorie'}
+                  size="small"
+                  sx={{ 
+                    background: PALETTE.BROWN,
+                    color: PALETTE.WHITE,
+                    mt: 1
+                  }}
+                />
+              </Box>
+            </Box>
+            
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" color={PALETTE.BROWN} gutterBottom>
+                Détails du vote
               </Typography>
               
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ 
-                    p: 3, 
-                    mb: 3, 
-                    border: `1px solid ${PALETTE.OR}30`,
-                    borderRadius: 2,
-                    background: `${PALETTE.OR}08`,
-                    height: '100%'
-                  }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                      <Avatar 
-                        src={candidat?.photo_url}
-                        sx={{ 
-                          width: 80, 
-                          height: 80,
-                          border: `3px solid ${PALETTE.OR}`
-                        }}
-                      />
+              <FormControl fullWidth sx={{ mb: 3 }}>
+                <InputLabel id="votes-count-label">Nombre de votes</InputLabel>
+                <Select
+                  labelId="votes-count-label"
+                  value={votesCount}
+                  label="Nombre de votes"
+                  onChange={(e) => setVotesCount(e.target.value)}
+                  error={!!formErrors.votesCount}
+                >
+                  {voteOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              
+              <Box sx={{ 
+                p: 2, 
+                background: `${PALETTE.OR}10`, 
+                borderRadius: 1,
+                border: `1px solid ${PALETTE.OR}30`
+              }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2">Prix par vote:</Typography>
+                  <Typography variant="body2" fontWeight="medium">
+                    {VOTE_PRICE.toLocaleString()} XOF
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2">Nombre de votes:</Typography>
+                  <Typography variant="body2" fontWeight="medium">
+                    {votesCount}
+                  </Typography>
+                </Box>
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="body1" fontWeight="bold">Total à payer:</Typography>
+                  <Typography variant="h6" fontWeight="bold" color={PALETTE.RED_DARK}>
+                    {calculateTotal().toLocaleString()} XOF
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+          </Paper>
+        </Grid>
+        
+        <Grid item xs={12} md={6}>
+          <Paper elevation={0} sx={{ 
+            p: 3, 
+            border: `1px solid ${PALETTE.OR}30`,
+            borderRadius: 2,
+            background: `${PALETTE.OR}08`,
+            height: '100%'
+          }}>
+            <Typography variant="subtitle2" color={PALETTE.BROWN} gutterBottom>
+              Vos informations
+            </Typography>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Ces informations seront utilisées pour la confirmation du paiement
+            </Typography>
+            
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Prénom"
+                  value={userData.firstname}
+                  onChange={(e) => setUserData({...userData, firstname: e.target.value})}
+                  error={!!formErrors.firstname}
+                  helperText={formErrors.firstname}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <PersonAddIcon color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Nom"
+                  value={userData.lastname}
+                  onChange={(e) => setUserData({...userData, lastname: e.target.value})}
+                  error={!!formErrors.lastname}
+                  helperText={formErrors.lastname}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Email"
+                  type="email"
+                  value={userData.email}
+                  onChange={(e) => setUserData({...userData, email: e.target.value})}
+                  error={!!formErrors.email}
+                  helperText={formErrors.email || "Nous enverrons la confirmation à cette adresse"}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <EmailIcon color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Téléphone"
+                  value={userData.phone}
+                  onChange={(e) => setUserData({...userData, phone: e.target.value})}
+                  error={!!formErrors.phone}
+                  helperText={formErrors.phone || "Format: 0XXXXXXXXX ou 229XXXXXXXX"}
+                  placeholder="0XXXXXXXXX"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <PhoneIcon color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+            </Grid>
+            
+            <Alert 
+              severity="info" 
+              sx={{ 
+                mt: 3,
+                background: `${PALETTE.BROWN}08`,
+                border: `1px solid ${PALETTE.BROWN}30`
+              }}
+            >
+              <Typography variant="body2">
+                <strong>Important:</strong> Assurez-vous que vos informations sont correctes avant de continuer.
+              </Typography>
+            </Alert>
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
+  ));
+
+  // Composant pour l'étape 2 - Paiement
+  const StepPaiement = React.memo(() => (
+    <Box key={`step-paiement-${stepKey.current}`}>
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        mb: 3 
+      }}>
+        <Typography variant="h6" color={PALETTE.RED_DARK} fontWeight="bold">
+          Procéder au paiement
+        </Typography>
+        
+        {pollingActive && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TimerIcon sx={{ color: timeLeft < 300 ? PALETTE.RED_DARK : PALETTE.BROWN }} />
+            <Typography 
+              variant="body1" 
+              fontWeight="bold"
+              sx={{ 
+                color: timeLeft < 300 ? PALETTE.RED_DARK : PALETTE.BROWN,
+                fontFamily: 'monospace'
+              }}
+            >
+              {formatTime(timeLeft)}
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      {!pollingActive ? (
+        <>
+          <Paper elevation={0} sx={{ 
+            p: 3, 
+            mb: 3, 
+            border: `1px solid ${PALETTE.OR}30`,
+            borderRadius: 2
+          }}>
+            <Typography variant="subtitle2" color={PALETTE.BROWN} gutterBottom>
+              Choisissez votre méthode de paiement
+            </Typography>
+            
+            <FormControl component="fieldset" sx={{ mb: 3 }}>
+              <RadioGroup
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                sx={{ flexDirection: 'row', gap: 2 }}
+              >
+                <FormControlLabel
+                  value="mobile_money"
+                  control={<Radio />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <MobileIcon />
                       <Box>
-                        <Typography variant="h6" fontWeight="bold" color={PALETTE.RED_DARK}>
-                          {formatNomComplet(candidat)}
+                        <Typography>Mobile Money</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          MTN & Moov Money
                         </Typography>
-                        <Chip 
-                          label={category?.nom || 'Catégorie'}
-                          size="small"
-                          sx={{ 
-                            background: PALETTE.BROWN,
-                            color: PALETTE.WHITE,
-                            mt: 1
-                          }}
-                        />
                       </Box>
                     </Box>
-                    
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="subtitle2" color={PALETTE.BROWN} gutterBottom>
-                        Détails du vote
-                      </Typography>
-                      
-                      <FormControl fullWidth sx={{ mb: 3 }}>
-                        <InputLabel id="votes-count-label">Nombre de votes</InputLabel>
-                        <Select
-                          labelId="votes-count-label"
-                          value={votesCount}
-                          label="Nombre de votes"
-                          onChange={(e) => setVotesCount(e.target.value)}
-                          error={!!formErrors.votesCount}
-                        >
-                          {voteOptions.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                              {option.label}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      
-                      <Box sx={{ 
-                        p: 2, 
-                        background: `${PALETTE.OR}10`, 
-                        borderRadius: 1,
-                        border: `1px solid ${PALETTE.OR}30`
-                      }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Prix par vote:</Typography>
-                          <Typography variant="body2" fontWeight="medium">
-                            {VOTE_PRICE.toLocaleString()} XOF
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Nombre de votes:</Typography>
-                          <Typography variant="body2" fontWeight="medium">
-                            {votesCount}
-                          </Typography>
-                        </Box>
-                        <Divider sx={{ my: 1 }} />
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <Typography variant="body1" fontWeight="bold">Total à payer:</Typography>
-                          <Typography variant="h6" fontWeight="bold" color={PALETTE.RED_DARK}>
-                            {calculateTotal().toLocaleString()} XOF
-                          </Typography>
-                        </Box>
+                  }
+                  sx={{
+                    border: paymentMethod === 'mobile_money' ? `2px solid ${PALETTE.OR}` : '1px solid #ddd',
+                    borderRadius: 2,
+                    padding: 2,
+                    minWidth: 200
+                  }}
+                />
+                
+                <FormControlLabel
+                  value="card"
+                  control={<Radio />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CardIcon />
+                      <Box>
+                        <Typography>Carte bancaire</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Visa, Mastercard
+                        </Typography>
                       </Box>
                     </Box>
-                  </Paper>
+                  }
+                  sx={{
+                    border: paymentMethod === 'card' ? `2px solid ${PALETTE.OR}` : '1px solid #ddd',
+                    borderRadius: 2,
+                    padding: 2,
+                    minWidth: 200
+                  }}
+                />
+              </RadioGroup>
+            </FormControl>
+
+            <Box sx={{ 
+              p: 3, 
+              background: `${PALETTE.RED_DARK}08`,
+              borderRadius: 2,
+              border: `1px solid ${PALETTE.RED_DARK}30`,
+              mb: 2
+            }}>
+              <Typography variant="subtitle2" color={PALETTE.RED_DARK} gutterBottom fontWeight="bold">
+                Récapitulatif de la commande
+              </Typography>
+              
+              <Grid container spacing={1}>
+                <Grid item xs={6}>
+                  <Typography variant="body2">Candidat:</Typography>
+                </Grid>
+                <Grid item xs={6} textAlign="right">
+                  <Typography variant="body2" fontWeight="medium">
+                    {formatNomComplet(candidat)}
+                  </Typography>
                 </Grid>
                 
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ 
-                    p: 3, 
-                    border: `1px solid ${PALETTE.OR}30`,
-                    borderRadius: 2,
-                    background: `${PALETTE.OR}08`,
-                    height: '100%'
-                  }}>
-                    <Typography variant="subtitle2" color={PALETTE.BROWN} gutterBottom>
-                      Vos informations
-                    </Typography>
-                    
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Ces informations seront utilisées pour la confirmation du paiement
-                    </Typography>
-                    
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          label="Prénom"
-                          value={userData.firstname}
-                          onChange={(e) => setUserData({...userData, firstname: e.target.value})}
-                          error={!!formErrors.firstname}
-                          helperText={formErrors.firstname}
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <PersonAddIcon color="action" />
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          label="Nom"
-                          value={userData.lastname}
-                          onChange={(e) => setUserData({...userData, lastname: e.target.value})}
-                          error={!!formErrors.lastname}
-                          helperText={formErrors.lastname}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12}>
-                        <TextField
-                          fullWidth
-                          label="Email"
-                          type="email"
-                          value={userData.email}
-                          onChange={(e) => setUserData({...userData, email: e.target.value})}
-                          error={!!formErrors.email}
-                          helperText={formErrors.email || "Nous enverrons la confirmation à cette adresse"}
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <EmailIcon color="action" />
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12}>
-                        <TextField
-                          fullWidth
-                          label="Téléphone"
-                          value={userData.phone}
-                          onChange={(e) => setUserData({...userData, phone: e.target.value})}
-                          error={!!formErrors.phone}
-                          helperText={formErrors.phone || "Format: 0XXXXXXXXX ou 229XXXXXXXX"}
-                          placeholder="0XXXXXXXXX"
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <PhoneIcon color="action" />
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
-                      </Grid>
-                    </Grid>
-                    
-                    <Alert 
-                      severity="info" 
-                      sx={{ 
-                        mt: 3,
-                        background: `${PALETTE.BROWN}08`,
-                        border: `1px solid ${PALETTE.BROWN}30`
-                      }}
-                    >
-                      <Typography variant="body2">
-                        <strong>Important:</strong> Assurez-vous que vos informations sont correctes avant de continuer.
-                      </Typography>
-                    </Alert>
-                  </Paper>
+                <Grid item xs={6}>
+                  <Typography variant="body2">Nombre de votes:</Typography>
+                </Grid>
+                <Grid item xs={6} textAlign="right">
+                  <Typography variant="body2" fontWeight="medium">
+                    {votesCount}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={6}>
+                  <Typography variant="body2">Montant total:</Typography>
+                </Grid>
+                <Grid item xs={6} textAlign="right">
+                  <Typography variant="h6" fontWeight="bold" color={PALETTE.RED_DARK}>
+                    {calculateTotal().toLocaleString()} XOF
+                  </Typography>
                 </Grid>
               </Grid>
             </Box>
-          );
 
-        case 1:
-          return (
-            <Box>
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                mb: 3 
-              }}>
-                <Typography variant="h6" color={PALETTE.RED_DARK} fontWeight="bold">
-                  Procéder au paiement
-                </Typography>
-                
-                {pollingActive && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TimerIcon sx={{ color: timeLeft < 300 ? PALETTE.RED_DARK : PALETTE.BROWN }} />
-                    <Typography 
-                      variant="body1" 
-                      fontWeight="bold"
-                      sx={{ 
-                        color: timeLeft < 300 ? PALETTE.RED_DARK : PALETTE.BROWN,
-                        fontFamily: 'monospace'
-                      }}
-                    >
-                      {formatTime(timeLeft)}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-
-              {!pollingActive ? (
-                <>
-                  <Paper elevation={0} sx={{ 
-                    p: 3, 
-                    mb: 3, 
-                    border: `1px solid ${PALETTE.OR}30`,
-                    borderRadius: 2
-                  }}>
-                    <Typography variant="subtitle2" color={PALETTE.BROWN} gutterBottom>
-                      Choisissez votre méthode de paiement
-                    </Typography>
-                    
-                    <FormControl component="fieldset" sx={{ mb: 3 }}>
-                      <RadioGroup
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
-                        sx={{ flexDirection: 'row', gap: 2 }}
-                      >
-                        <FormControlLabel
-                          value="mobile_money"
-                          control={<Radio />}
-                          label={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <MobileIcon />
-                              <Box>
-                                <Typography>Mobile Money</Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  MTN & Moov Money
-                                </Typography>
-                              </Box>
-                            </Box>
-                          }
-                          sx={{
-                            border: paymentMethod === 'mobile_money' ? `2px solid ${PALETTE.OR}` : '1px solid #ddd',
-                            borderRadius: 2,
-                            padding: 2,
-                            minWidth: 200
-                          }}
-                        />
-                        
-                        <FormControlLabel
-                          value="card"
-                          control={<Radio />}
-                          label={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <CardIcon />
-                              <Box>
-                                <Typography>Carte bancaire</Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  Visa, Mastercard
-                                </Typography>
-                              </Box>
-                            </Box>
-                          }
-                          sx={{
-                            border: paymentMethod === 'card' ? `2px solid ${PALETTE.OR}` : '1px solid #ddd',
-                            borderRadius: 2,
-                            padding: 2,
-                            minWidth: 200
-                          }}
-                        />
-                      </RadioGroup>
-                    </FormControl>
-
-                    <Box sx={{ 
-                      p: 3, 
-                      background: `${PALETTE.RED_DARK}08`,
-                      borderRadius: 2,
-                      border: `1px solid ${PALETTE.RED_DARK}30`,
-                      mb: 2
-                    }}>
-                      <Typography variant="subtitle2" color={PALETTE.RED_DARK} gutterBottom fontWeight="bold">
-                        Récapitulatif de la commande
-                      </Typography>
-                      
-                      <Grid container spacing={1}>
-                        <Grid item xs={6}>
-                          <Typography variant="body2">Candidat:</Typography>
-                        </Grid>
-                        <Grid item xs={6} textAlign="right">
-                          <Typography variant="body2" fontWeight="medium">
-                            {formatNomComplet(candidat)}
-                          </Typography>
-                        </Grid>
-                        
-                        <Grid item xs={6}>
-                          <Typography variant="body2">Nombre de votes:</Typography>
-                        </Grid>
-                        <Grid item xs={6} textAlign="right">
-                          <Typography variant="body2" fontWeight="medium">
-                            {votesCount}
-                          </Typography>
-                        </Grid>
-                        
-                        <Grid item xs={6}>
-                          <Typography variant="body2">Montant total:</Typography>
-                        </Grid>
-                        <Grid item xs={6} textAlign="right">
-                          <Typography variant="h6" fontWeight="bold" color={PALETTE.RED_DARK}>
-                            {calculateTotal().toLocaleString()} XOF
-                          </Typography>
-                        </Grid>
-                      </Grid>
-                    </Box>
-
-                    <Alert 
-                      severity="info" 
-                      sx={{ 
-                        mb: 2,
-                        background: `${PALETTE.OR}10`,
-                        border: `1px solid ${PALETTE.OR}30`
-                      }}
-                    >
-                      <Typography variant="body2">
-                        <strong>Information:</strong> Vous serez redirigé vers la plateforme sécurisée de FedaPay pour finaliser le paiement.
-                      </Typography>
-                    </Alert>
-                    
-                    <Alert 
-                      severity="warning"
-                      sx={{ 
-                        background: `${PALETTE.RED_DARK}10`,
-                        border: `1px solid ${PALETTE.RED_DARK}30`
-                      }}
-                    >
-                      <Typography variant="body2">
-                        <strong>Important:</strong> Une nouvelle fenêtre s'ouvrira. Ne fermez pas cette page pendant le paiement.
-                      </Typography>
-                    </Alert>
-                  </Paper>
-
-                  {error && (
-                    <Alert 
-                      severity="error" 
-                      sx={{ mb: 2 }}
-                      action={
-                        <Button 
-                          color="inherit" 
-                          size="small"
-                          onClick={() => setError('')}
-                        >
-                          Fermer
-                        </Button>
-                      }
-                    >
-                      <Typography variant="body2">
-                        {error}
-                      </Typography>
-                    </Alert>
-                  )}
-                </>
-              ) : (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <CircularProgress 
-                    size={60}
-                    sx={{ 
-                      color: PALETTE.OR,
-                      mb: 3
-                    }}
-                  />
-                  <Typography variant="h6" gutterBottom color={PALETTE.RED_DARK}>
-                    {paymentStatus === 'processing' ? 'Paiement en cours...' : 'Vérification du paiement...'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {paymentStatus === 'processing' 
-                      ? 'Veuillez compléter le paiement dans la fenêtre ouverte.'
-                      : 'Veuillez patienter pendant que nous vérifions le statut de votre paiement.'}
-                  </Typography>
-                  
-                  <LinearProgress 
-                    sx={{ 
-                      mt: 3,
-                      height: 8,
-                      borderRadius: 4,
-                      background: `${PALETTE.OR}20`,
-                      '& .MuiLinearProgress-bar': {
-                        background: `linear-gradient(90deg, ${PALETTE.OR} 0%, ${PALETTE.RED_DARK} 100%)`,
-                        borderRadius: 4
-                      }
-                    }}
-                  />
-                  
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-                    Statut: {paymentStatus}
-                  </Typography>
-                  
-                  <Button 
-                    variant="outlined" 
-                    sx={{ mt: 3 }}
-                    onClick={() => {
-                      clearPolling();
-                      setPaymentStatus('pending');
-                    }}
-                  >
-                    Annuler la vérification
-                  </Button>
-                </Box>
-              )}
-            </Box>
-          );
-
-        case 2:
-          return (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Box sx={{ 
-                width: 100, 
-                height: 100, 
-                borderRadius: '50%',
-                background: `linear-gradient(135deg, ${PALETTE.OR} 0%, ${PALETTE.RED_DARK} 100%)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                mx: 'auto',
-                mb: 3
-              }}>
-                <CheckCircleIcon sx={{ fontSize: 60, color: PALETTE.WHITE }} />
-              </Box>
-              
-              <Typography variant="h4" fontWeight="bold" gutterBottom color={PALETTE.RED_DARK}>
-                Paiement Réussi !
+            <Alert 
+              severity="info" 
+              sx={{ 
+                mb: 2,
+                background: `${PALETTE.OR}10`,
+                border: `1px solid ${PALETTE.OR}30`
+              }}
+            >
+              <Typography variant="body2">
+                <strong>Information:</strong> Vous serez redirigé vers la plateforme sécurisée de FedaPay pour finaliser le paiement.
               </Typography>
-              
-              <Typography variant="h6" color={PALETTE.BROWN} gutterBottom>
-                Merci pour votre soutien !
+            </Alert>
+            
+            <Alert 
+              severity="warning"
+              sx={{ 
+                background: `${PALETTE.RED_DARK}10`,
+                border: `1px solid ${PALETTE.RED_DARK}30`
+              }}
+            >
+              <Typography variant="body2">
+                <strong>Important:</strong> Une nouvelle fenêtre s'ouvrira. Ne fermez pas cette page pendant le paiement.
               </Typography>
-              
-              <Typography variant="body1" color="text.secondary" paragraph>
-                Vous avez voté <strong>{votesCount} fois</strong> pour <strong>{formatNomComplet(candidat)}</strong>.
-                Votre vote a été enregistré avec succès.
+            </Alert>
+          </Paper>
+
+          {error && (
+            <Alert 
+              severity="error" 
+              sx={{ mb: 2 }}
+              onClose={() => setError('')}
+            >
+              <Typography variant="body2">
+                {error}
               </Typography>
-              
-              <Paper elevation={0} sx={{ 
-                p: 3, 
-                mt: 3,
-                mx: 'auto',
-                maxWidth: 400,
-                border: `1px solid ${PALETTE.OR}30`,
-                borderRadius: 2,
-                background: `${PALETTE.OR}08`
-              }}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12}>
-                    <Typography variant="caption" color="text.secondary">
-                      Référence
-                    </Typography>
-                    <Typography variant="body2" fontWeight="medium" sx={{ wordBreak: 'break-all' }}>
-                      {paymentData?.payment_token}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="caption" color="text.secondary">
-                      Montant
-                    </Typography>
-                    <Typography variant="body2" fontWeight="medium" color={PALETTE.RED_DARK}>
-                      {calculateTotal().toLocaleString()} XOF
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="caption" color="text.secondary">
-                      Date
-                    </Typography>
-                    <Typography variant="body2" fontWeight="medium">
-                      {new Date().toLocaleDateString()}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="caption" color="text.secondary">
-                      Méthode
-                    </Typography>
-                    <Typography variant="body2" fontWeight="medium">
-                      {paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Carte'}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="caption" color="text.secondary">
-                      Statut
-                    </Typography>
-                    <Chip 
-                      label="Confirmé"
-                      size="small"
-                      sx={{ 
-                        background: '#4CAF50',
-                        color: 'white',
-                        fontWeight: 'bold'
-                      }}
-                    />
-                  </Grid>
-                </Grid>
-              </Paper>
-              
-              <Box sx={{ mt: 4 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Un email de confirmation a été envoyé à <strong>{userData.email}</strong>
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-                  Redirection vers la page de confirmation...
-                </Typography>
-              </Box>
-            </Box>
-          );
+            </Alert>
+          )}
+        </>
+      ) : (
+        <Box sx={{ textAlign: 'center', py: 4 }}>
+          <CircularProgress 
+            size={60}
+            sx={{ 
+              color: PALETTE.OR,
+              mb: 3
+            }}
+          />
+          <Typography variant="h6" gutterBottom color={PALETTE.RED_DARK}>
+            {paymentStatus === 'processing' ? 'Paiement en cours...' : 'Vérification du paiement...'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {paymentStatus === 'processing' 
+              ? 'Veuillez compléter le paiement dans la fenêtre ouverte.'
+              : 'Veuillez patienter pendant que nous vérifions le statut de votre paiement.'}
+          </Typography>
+          
+          <LinearProgress 
+            sx={{ 
+              mt: 3,
+              height: 8,
+              borderRadius: 4,
+              background: `${PALETTE.OR}20`,
+              '& .MuiLinearProgress-bar': {
+                background: `linear-gradient(90deg, ${PALETTE.OR} 0%, ${PALETTE.RED_DARK} 100%)`,
+                borderRadius: 4
+              }
+            }}
+          />
+          
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+            Statut: {paymentStatus}
+          </Typography>
+          
+          <Button 
+            variant="outlined" 
+            sx={{ mt: 3 }}
+            onClick={() => {
+              clearPolling();
+              setPaymentStatus('pending');
+            }}
+          >
+            Annuler la vérification
+          </Button>
+        </Box>
+      )}
+    </Box>
+  ));
 
-        default:
-          return null;
-      }
-    })();
-
-    // Retourner le contenu sans animations problématiques
-    return stepContent;
-  };
+  // Composant pour l'étape 3 - Confirmation
+  const StepConfirmation = React.memo(() => (
+    <Box key={`step-confirm-${stepKey.current}`} sx={{ textAlign: 'center', py: 4 }}>
+      <Box sx={{ 
+        width: 100, 
+        height: 100, 
+        borderRadius: '50%',
+        background: `linear-gradient(135deg, ${PALETTE.OR} 0%, ${PALETTE.RED_DARK} 100%)`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        mx: 'auto',
+        mb: 3
+      }}>
+        <CheckCircleIcon sx={{ fontSize: 60, color: PALETTE.WHITE }} />
+      </Box>
+      
+      <Typography variant="h4" fontWeight="bold" gutterBottom color={PALETTE.RED_DARK}>
+        Paiement Réussi !
+      </Typography>
+      
+      <Typography variant="h6" color={PALETTE.BROWN} gutterBottom>
+        Merci pour votre soutien !
+      </Typography>
+      
+      <Typography variant="body1" color="text.secondary" paragraph>
+        Vous avez voté <strong>{votesCount} fois</strong> pour <strong>{formatNomComplet(candidat)}</strong>.
+        Votre vote a été enregistré avec succès.
+      </Typography>
+      
+      <Paper elevation={0} sx={{ 
+        p: 3, 
+        mt: 3,
+        mx: 'auto',
+        maxWidth: 400,
+        border: `1px solid ${PALETTE.OR}30`,
+        borderRadius: 2,
+        background: `${PALETTE.OR}08`
+      }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <Typography variant="caption" color="text.secondary">
+              Référence
+            </Typography>
+            <Typography variant="body2" fontWeight="medium" sx={{ wordBreak: 'break-all' }}>
+              {paymentData?.payment_token}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography variant="caption" color="text.secondary">
+              Montant
+            </Typography>
+            <Typography variant="body2" fontWeight="medium" color={PALETTE.RED_DARK}>
+              {calculateTotal().toLocaleString()} XOF
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography variant="caption" color="text.secondary">
+              Date
+            </Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {new Date().toLocaleDateString()}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography variant="caption" color="text.secondary">
+              Méthode
+            </Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Carte'}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography variant="caption" color="text.secondary">
+              Statut
+            </Typography>
+            <Chip 
+              label="Confirmé"
+              size="small"
+              sx={{ 
+                background: '#4CAF50',
+                color: 'white',
+                fontWeight: 'bold'
+              }}
+            />
+          </Grid>
+        </Grid>
+      </Paper>
+      
+      <Box sx={{ mt: 4 }}>
+        <Typography variant="body2" color="text.secondary">
+          Un email de confirmation a été envoyé à <strong>{userData.email}</strong>
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+          Redirection vers la page de confirmation...
+        </Typography>
+      </Box>
+    </Box>
+  ));
 
   if (!candidat) {
     return (
@@ -995,18 +981,70 @@ const PaymentPage = () => {
     );
   }
 
+  // Render simple sans stepper Material-UI (qui peut causer des problèmes)
+  const renderStepIndicator = () => {
+    const stepsLabels = ['Informations', 'Paiement', 'Confirmation'];
+    
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3, mt: 2 }}>
+        {stepsLabels.map((label, index) => (
+          <Box key={label} sx={{ display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: activeStep === index ? PALETTE.OR : 
+                                activeStep > index ? PALETTE.OR : '#e0e0e0',
+                color: activeStep >= index ? PALETTE.WHITE : '#666',
+                fontWeight: 'bold',
+                fontSize: '0.875rem'
+              }}
+            >
+              {index + 1}
+            </Box>
+            <Typography
+              sx={{
+                ml: 1,
+                mr: index < stepsLabels.length - 1 ? 1 : 0,
+                color: activeStep === index ? PALETTE.RED_DARK : '#666',
+                fontWeight: activeStep === index ? 'bold' : 'normal',
+                fontSize: '0.875rem'
+              }}
+            >
+              {label}
+            </Typography>
+            {index < stepsLabels.length - 1 && (
+              <Box
+                sx={{
+                  width: 40,
+                  height: 2,
+                  backgroundColor: activeStep > index ? PALETTE.OR : '#e0e0e0',
+                  mx: 1
+                }}
+              />
+            )}
+          </Box>
+        ))}
+      </Box>
+    );
+  };
+
   return (
     <>
       <Container 
         maxWidth="lg" 
-        key={`container-${stepKeyRef.current}`}
+        key={`main-container-${stepKey.current}`}
         sx={{ 
           py: 4,
           minHeight: '100vh',
           background: `linear-gradient(135deg, ${PALETTE.WHITE} 0%, ${PALETTE.OR}05 100%)`
         }}
       >
-        {/* En-tête avec stepper */}
+        {/* En-tête */}
         <Box sx={{ mb: 4 }}>
           <Button
             startIcon={<ArrowBackIcon />}
@@ -1032,40 +1070,14 @@ const PaymentPage = () => {
             Édition {edition?.nom} {edition?.annee} • {category?.nom}
           </Typography>
           
-          <Stepper 
-            activeStep={activeStep} 
-            alternativeLabel
-            key={`stepper-${stepKeyRef.current}`}
-            sx={{ 
-              mt: 3,
-              '& .MuiStepLabel-label': {
-                color: PALETTE.RED_DARK,
-                fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                fontWeight: 'medium'
-              },
-              '& .MuiStepIcon-root': {
-                color: `${PALETTE.OR}40`,
-                '&.Mui-active': {
-                  color: PALETTE.OR
-                },
-                '&.Mui-completed': {
-                  color: PALETTE.OR
-                }
-              }
-            }}
-          >
-            {steps.map((label, index) => (
-              <Step key={`step-${index}-${activeStep}-${stepKeyRef.current}`}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
+          {/* Stepper personnalisé */}
+          {renderStepIndicator()}
         </Box>
 
         {/* Contenu principal */}
         <Paper 
-          elevation={0} 
-          key={`paper-${activeStep}-${stepKeyRef.current}`}
+          elevation={0}
+          key={`content-paper-${stepKey.current}`}
           ref={stepContainerRef}
           sx={{ 
             p: { xs: 2, sm: 3, md: 4 },
@@ -1073,10 +1085,12 @@ const PaymentPage = () => {
             border: `1px solid ${PALETTE.OR}20`,
             background: PALETTE.WHITE,
             mb: 4,
-            minHeight: 400
+            minHeight: 400,
+            position: 'relative',
+            overflow: 'hidden'
           }}
         >
-          {renderStepContent(activeStep)}
+          {renderStepContent()}
         </Paper>
 
         {/* Actions */}
@@ -1136,7 +1150,7 @@ const PaymentPage = () => {
             >
               {loading ? (
                 <CircularProgress size={24} color="inherit" />
-              ) : activeStep === steps.length - 1 ? (
+              ) : activeStep === 2 ? (
                 'Terminer'
               ) : (
                 activeStep === 0 ? 'Continuer vers le paiement' : 'Procéder au paiement'
@@ -1165,8 +1179,9 @@ const PaymentPage = () => {
         open={showPaymentModal && fedapayWindow !== null} 
         onClose={() => setShowPaymentModal(false)}
         disableRestoreFocus
+        disablePortal={isMobile}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ p: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6">Paiement en cours</Typography>
             <IconButton 
@@ -1177,8 +1192,8 @@ const PaymentPage = () => {
             </IconButton>
           </Box>
         </DialogTitle>
-        <DialogContent>
-          <Box sx={{ textAlign: 'center', py: 2 }}>
+        <DialogContent sx={{ p: 2 }}>
+          <Box sx={{ textAlign: 'center', py: 1 }}>
             <PaymentIcon sx={{ fontSize: 60, color: PALETTE.OR, mb: 2 }} />
             <Typography variant="body1" gutterBottom>
               Une fenêtre FedaPay s'est ouverte pour finaliser votre paiement.
@@ -1188,7 +1203,7 @@ const PaymentPage = () => {
             </Typography>
           </Box>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 2 }}>
           <Button 
             onClick={() => {
               if (fedapayWindow) {
@@ -1197,6 +1212,7 @@ const PaymentPage = () => {
               setShowPaymentModal(false);
             }}
             variant="contained"
+            fullWidth
           >
             J'ai compris
           </Button>
@@ -1206,7 +1222,4 @@ const PaymentPage = () => {
   );
 };
 
-export default PaymentPage;
-
-
-
+export default React.memo(PaymentPage);
