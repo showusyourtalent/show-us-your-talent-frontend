@@ -44,7 +44,7 @@ import {
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from '../../utils/axiosConfig';
+import axios from '../../api/axios';
 
 // Composant Message Bubble
 const MessageBubble = ({ message, isOwn, showSender }) => {

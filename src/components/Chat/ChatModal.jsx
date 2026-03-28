@@ -56,7 +56,7 @@ import {
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from '../../utils/axiosConfig';
+import axios from '../../api/axios';
 import { CHAT_PALETTE, CHAT_SETTINGS } from '../../constants/chat';
 import './ChatModal.css';
 

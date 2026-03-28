@@ -78,7 +78,7 @@ import {
   Download as DownloadCloudIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from '../../utils/axiosConfig';
+import axios from '../../api/axios';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';

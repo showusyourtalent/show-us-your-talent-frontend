@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import axiosInstance from '../lib/axios';
+import axiosInstance from '../api/axios';
 import {
   Box,
   Button,

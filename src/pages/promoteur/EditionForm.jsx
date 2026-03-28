@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axiosInstance from '../../lib/axios';
+import axiosInstance from '../../api/axios';
 import { toast } from 'react-hot-toast';
 import {
   Box,

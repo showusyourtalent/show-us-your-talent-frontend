@@ -36,7 +36,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import axiosInstance from '../api/axios';
+import axiosInstance from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 

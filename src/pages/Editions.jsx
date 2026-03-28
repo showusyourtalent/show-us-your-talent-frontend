@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import axiosInstance from '../lib/axios';
+import axiosInstance from '../api/axios';
 import {
   Box,
   Card,

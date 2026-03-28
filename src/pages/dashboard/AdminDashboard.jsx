@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import axiosInstance from '../../lib/axios';
+import axiosInstance from '../../api/axios';
 import {
   Grid,
   Card,

@@ -34,7 +34,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import axios from '../utils/axiosConfig';
+import axios from '../api/axios';
 import ChatModal from '../components/Chat/ChatModal';
 import { useAuth } from '../contexts/AuthContext';
 
