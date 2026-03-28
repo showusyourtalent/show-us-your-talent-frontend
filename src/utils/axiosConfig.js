@@ -34,19 +34,24 @@ const axiosInstance = axios.create({
 // Intercepteur pour ajouter le token automatiquement
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access_token'); // Assurez-vous que c'est 'access_token'
     
-    console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    console.log('Request config:', {
-      baseURL: config.baseURL,
-      url: config.url,
-      hasToken: !!token,
-      headers: config.headers
-    });
+    // Debug uniquement en développement
+    if (import.meta.env.MODE === 'development') {
+      console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+      console.log('Request config:', {
+        baseURL: config.baseURL,
+        url: config.url,
+        hasToken: !!token,
+        headers: config.headers
+      });
+    }
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('Authorization header added');
+      if (import.meta.env.MODE === 'development') {
+        console.log('Authorization header added');
+      }
     }
     
     return config;
@@ -60,8 +65,10 @@ axiosInstance.interceptors.request.use(
 // Intercepteur de réponse
 axiosInstance.interceptors.response.use(
   (response) => {
-    console.log(`✅ API Response: ${response.status} ${response.config.url}`);
-    console.log('Response data:', response.data);
+    if (import.meta.env.MODE === 'development') {
+      console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+      console.log('Response data:', response.data);
+    }
     return response;
   },
   (error) => {
@@ -79,12 +86,8 @@ axiosInstance.interceptors.response.use(
     });
     
     // Log des headers pour debug
-    if (error.response?.headers) {
-      console.log('Response Headers:', {
-        'content-type': error.response.headers['content-type'],
-        'access-control-allow-origin': error.response.headers['access-control-allow-origin'],
-        'access-control-allow-credentials': error.response.headers['access-control-allow-credentials']
-      });
+    if (import.meta.env.MODE === 'development' && error.response?.headers) {
+      console.log('Response Headers:', error.response.headers);
     }
     
     // Si erreur 401 et pas de retry
@@ -101,7 +104,7 @@ axiosInstance.interceptors.response.use(
       
       if (!isLoginPage && !isAuthRequest) {
         console.log('Redirecting to login...');
-        localStorage.removeItem('token');
+        localStorage.removeItem('access_token');
         setTimeout(() => {
           window.location.href = '/login';
         }, 500);
