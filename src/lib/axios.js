@@ -1,67 +1,81 @@
 import axios from 'axios';
 
-// URL de l'API, peut être configurée via VITE_API_URL
-const API_URL = import.meta.env.VITE_API_URL || 'https://show-us-your-talent-backend-main-qouoel.free.laravel.cloud/api';
+// ✅ URL racine du backend (SANS /api) — pour le CSRF cookie
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://show-us-your-talent-backend-main-qouoel.free.laravel.cloud/api')
+  .replace(/\/api\/?$/, '');
 
-// Crée une instance axios avec des paramètres par défaut
+// ✅ URL de base pour toutes les requêtes API (AVEC /api)
+const API_URL = `${BACKEND_URL}/api`;
+
 const axiosInstance = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   },
-  withCredentials: true,  // Pour envoyer les cookies (CSRF, session, etc.)
+  withCredentials: true,
 });
 
-// Fonction pour récupérer le token CSRF avant toute requête
-const getCsrfToken = async () => {
-  try {
-    await axios.get(`${API_URL}/sanctum/csrf-cookie`, { withCredentials: true }); // On récupère le CSRF token
-  } catch (error) {
-    console.error('Erreur lors de la récupération du token CSRF', error);
-    throw error;  // Renvoyer l'erreur pour que l'appel API ne soit pas effectué sans CSRF
-  }
+// Flag pour éviter les appels CSRF répétés
+let csrfInitialized = false;
+
+const initCsrf = async () => {
+  if (csrfInitialized) return;
+  // ✅ L'endpoint CSRF est sur la RACINE, pas sous /api
+  await axios.get(`${BACKEND_URL}/sanctum/csrf-cookie`, {
+    withCredentials: true,
+  });
+  csrfInitialized = true;
 };
 
-// Intercepteur pour ajouter le token CSRF et le token d'authentification dans les en-têtes
+// Intercepteur requêtes
 axiosInstance.interceptors.request.use(
   async (config) => {
-    // Assurez-vous que le CSRF token est disponible avant de faire une requête authentifiée
-    if (!config.headers['X-XSRF-TOKEN']) {
-      await getCsrfToken();  // Attendre que le token CSRF soit récupéré
+    // Initialiser le CSRF pour les requêtes mutantes
+    const mutating = ['post', 'put', 'patch', 'delete'];
+    if (mutating.includes(config.method?.toLowerCase())) {
+      try {
+        await initCsrf();
+      } catch (e) {
+        console.error('Erreur CSRF init:', e);
+      }
     }
 
-    // Ajouter le token d'accès dans le header Authorization si il existe
+    // Ajouter le Bearer token si disponible
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    return config; // Retourner la configuration modifiée de la requête
+    return config;
   },
-  (error) => {
-    return Promise.reject(error); // Retourner l'erreur en cas de problème
-  }
+  (error) => Promise.reject(error)
 );
 
-// Intercepteur pour gérer les erreurs
+// Intercepteur réponses
 axiosInstance.interceptors.response.use(
-  (response) => response,  // Si la réponse est correcte, on la retourne
-  (error) => {
+  (response) => response,
+  async (error) => {
     if (error.response?.status === 401) {
-      // Si une erreur 401 se produit, supprimer les tokens et rediriger vers la page de connexion
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
-      window.location.href = '/login'; // Rediriger vers la page de login
+      window.location.href = '/login';
     }
 
     if (error.response?.status === 419) {
-      // Erreur 419 : Token CSRF invalide ou expiré
-      console.error('Erreur CSRF : Il y a un problème avec le token CSRF.');
-      window.location.href = '/login';  // Rediriger si le CSRF échoue
+      // CSRF expiré — réinitialiser et rejouer
+      console.warn('CSRF expiré, renouvellement...');
+      csrfInitialized = false;
+      try {
+        await initCsrf();
+        return axiosInstance(error.config);
+      } catch {
+        window.location.href = '/login';
+      }
     }
 
-    return Promise.reject(error);  // Retourner l'erreur si ce n'est pas géré ci-dessus
+    return Promise.reject(error);
   }
 );
 
