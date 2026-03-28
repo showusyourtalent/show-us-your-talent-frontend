@@ -1,51 +1,42 @@
+/**
+ * FICHIER UNIQUE D'INSTANCE AXIOS
+ *
+ * Placez ce fichier dans : src/api/axios.js
+ *
+ * Tous vos composants doivent importer depuis ce même chemin :
+ *   import axiosInstance from '../api/axios';
+ *   import axiosInstance from '../../api/axios';   ← selon la profondeur
+ *
+ * Ne plus utiliser : ../lib/axios  ou  ../axiosConfig  ou  ../axios
+ */
 import axios from 'axios';
 
-// ✅ URL racine du backend (SANS /api) — pour le CSRF cookie
-const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://show-us-your-talent-backend-main-qouoel.free.laravel.cloud/api')
-  .replace(/\/api\/?$/, '');
-
-// ✅ URL de base pour toutes les requêtes API (AVEC /api)
-const API_URL = `${BACKEND_URL}/api`;
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  'https://show-us-your-talent-backend-main-qouoel.free.laravel.cloud/api';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'X-Requested-With': 'XMLHttpRequest',
   },
-  withCredentials: true,
+  // ✅ false : SPA cross-domaine → on utilise Bearer token uniquement, pas de session cookie
+  withCredentials: false,
 });
 
-// Flag pour éviter les appels CSRF répétés
-let csrfInitialized = false;
-
-const initCsrf = async () => {
-  if (csrfInitialized) return;
-  // ✅ L'endpoint CSRF est sur la RACINE, pas sous /api
-  await axios.get(`${BACKEND_URL}/sanctum/csrf-cookie`, {
-    withCredentials: true,
-  });
-  csrfInitialized = true;
-};
-
-// Intercepteur requêtes
+// ── Intercepteur requêtes : injecter le Bearer token ────────────────────────
 axiosInstance.interceptors.request.use(
-  async (config) => {
-    // Initialiser le CSRF pour les requêtes mutantes
-    const mutating = ['post', 'put', 'patch', 'delete'];
-    if (mutating.includes(config.method?.toLowerCase())) {
-      try {
-        await initCsrf();
-      } catch (e) {
-        console.error('Erreur CSRF init:', e);
-      }
-    }
-
-    // Ajouter le Bearer token si disponible
+  (config) => {
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (import.meta.env.DEV) {
+      console.log(`[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
     }
 
     return config;
@@ -53,26 +44,23 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Intercepteur réponses
+// ── Intercepteur réponses : gérer 401 ───────────────────────────────────────
 axiosInstance.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
+  (error) => {
+    const status  = error.response?.status;
+    const url     = error.config?.url || '';
+    const isLogin = window.location.pathname.includes('/login');
+    const isAuth  = url.includes('/auth/');
+
+    if (import.meta.env.DEV) {
+      console.error(`[API Error] ${status} ${url}`, error.response?.data);
+    }
+
+    if (status === 401 && !isLogin && !isAuth) {
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
       window.location.href = '/login';
-    }
-
-    if (error.response?.status === 419) {
-      // CSRF expiré — réinitialiser et rejouer
-      console.warn('CSRF expiré, renouvellement...');
-      csrfInitialized = false;
-      try {
-        await initCsrf();
-        return axiosInstance(error.config);
-      } catch {
-        window.location.href = '/login';
-      }
     }
 
     return Promise.reject(error);
