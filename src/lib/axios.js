@@ -1,6 +1,8 @@
 import axios from 'axios';
 
+
 const API_URL = import.meta.env.VITE_API_URL || 'https://show-us-your-talent-backend-main-qouoel.free.laravel.cloud/api';
+
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
