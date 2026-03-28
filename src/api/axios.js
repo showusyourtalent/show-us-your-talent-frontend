@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 const axiosInstance = axios.create({
-  baseURL: 'https://show-us-your-talent-backend-1.onrender.com/api',
+  baseURL: 'https://show-us-your-talent-backend-main-qouoel.free.laravel.cloud/api',
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
